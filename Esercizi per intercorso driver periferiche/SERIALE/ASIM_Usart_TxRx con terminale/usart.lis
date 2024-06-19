@@ -1,0 +1,213 @@
+00000000                                     1  ************************************************************************************
+00000000                                     2  *OGGETTO: Lo scopo del programma è provare la configurazione USART.CFG*
+00000000                                     3  *costituita da due sistemi gemelli ciascuno con un processore M68000, una  *
+00000000                                     4  *memoria ROM di 8k (addr $0-1FFF), una RAM di 10k (addr. $8000-$A7FF), un *
+00000000                                     5  *device seriale USART mappato a $2004, un device seriale di tipo TERMINAL*
+00000000                                     6  *mappato a $2000								     *
+00000000                                     7  *Alla tasiera  sono associati due tipi di interruzione:			     *
+00000000                                     8  *Interruzione su ENTER: linea 1, autovettore 25, mappata a $64, ISR a $8500 *
+00000000                                     9  *Interruzione su BUFFER FULL: linea 2, autovettore 26, mappata a $68, ISR a*
+00000000                                    10  *$8600										     *
+00000000                                    11  *Al dispositivo USART sono associati due livelli di interruzione:		     *
+00000000                                    12  *Interruzione su RxRDY: linea 3, autovettore 27, mappata a $6C,ISR a $8700 *
+00000000                                    13  *Interruzione su TxRDY: linea 4, autovettore 28, mappata a $70, ISR a $8800 *	
+00000000                                    14  *ALTRO: Il presente listato va caricato in entrambi i sistemi. 
+00000000                                    15  ************************************************************************************
+00000000                                    16  
+00000000  =00002004                         17  usart	EQU		$2004		Interfaccia seriale.
+00000000  =00002000                         18  ter	EQU		$2000		Terminale video.
+00000000                                    19  
+00000000                                    20  *
+00008200                                    21  	ORG	$8200		Indirizzo di partenza del main program.
+00008200                                    22  *
+00008200  307C 2004                         23  START	MOVEA.W	#usart,A0		Inizializza l'interfaccia seriale,
+00008204                                    24  *****************************************************************************************
+00008204                                    25  *	PRIMO ACCESSO IN SCRITTURA ALLA SERIALE => REGISTRO MODE	*
+00008204                                    26  *	INDIRIZZO DISPARI								*
+00008204                                    27  *	MODE | 0 | 1 | 0 | 1 | 1   1 | - | 1 |							*
+00008204                                    28  *		   |   |   |   |     |     |   |____Trasmissione Asincrona			*
+00008204                                    29  *		   |   |   |   |     |     |________Non utilizzato					*
+00008204                                    30  *		   |   |   |   |     |______________8 bit per dato					*
+00008204                                    31  *		   |   |   |   |____________________trasmette bit di parità			*
+00008204                                    32  *		   |   |   |________________________tipo di parità dispari	    	*
+00008204                                    33  *		   |   |____________________________2 bit di stop					*
+00008204                                    34  *		   |________________________________#bit di sync in trasmissione asincrona	*
+00008204                                    35  *****************************************************************************************   
+00008204                                    36  *
+00008204  117C 005D 0001                    37  	MOVE.B		#$5D,1(A0)	trasmissione asincrona, 8 bit di informazione
+0000820A                                    38  *							bit di parità dispari e 2 bit di stop,
+0000820A                                    39  *****************************************************************************************
+0000820A                                    40  *	SECONDO ACCESSO IN SCRITTURA ALLA SERIALE => REGISTRO CNTRL	*
+0000820A                                    41  *	INDIRIZZO DISPARI								*
+0000820A                                    42  *	CNTRL | 0 | 0 | 1 | 1 | 0 | 1 | 1 | 1 |							*
+0000820A                                    43  *		    |   |   |   |   |   |   |   |__Abilita trasmettitore				*
+0000820A                                    44  *		    |   |   |   |   |   |   |______Attiva DTR					*
+0000820A                                    45  *		    |   |   |   |   |   |__________Attiva ricevitore				*
+0000820A                                    46  *		    |   |   |   |   |______________Non utilizzato					*
+0000820A                                    47  *		    |   |   |   |__________________Azzera bits di errore in STATUS		*
+0000820A                                    48  *		    |   |   |______________________Attiva RTS					*
+0000820A                                    49  *		    |   |__________________________Non resetta la periferica			* 
+0000820A                                    50  *		    |______________________________Non va in 'hunt'				*
+0000820A                                    51  *****************************************************************************************
+0000820A  117C 0037 0001                    52  	MOVE.B		#$37,1(A0)	abilita trasmettitore e ricevitore, cancella flags
+00008210                                    53  *					di errore e attiva i segnali di handshaking.
+00008210                                    54  *
+00008210  307C 2000                         55  	MOVEA.W	#ter,A0		Inizializza il terminale video,
+00008214                                    56  **************************************************************************************************************
+00008214                                    57  *INIZIALIZZAZIONE DEL TERMINALE: 
+00008214                                    58  *
+00008214                                    59  *	CNTRL |0 |0 |1 |1 |1 |1 |1 |1 |
+00008214                                    60  *		  |   |   |   |   |   |   |   |__Abilita interruzioni su Buffer full
+00008214                                    61  *		  |   |   |   |   |   |   |____Abilita interruzioni su Enter
+00008214                                    62  *		  |   |   |   |   |   |______Pulisci schermo
+00008214                                    63  *		  |   |   |   |   |________Pulisci buffer tastiera
+00008214                                    64  *		  |   |   |   |__________Abilita tastiera
+00008214                                    65  *		  |   |   |____________Abilita echo
+00008214                                    66  *		  |   |______________Stato di buffer full
+00008214                                    67  *		  |________________Stato di Enter inviato
+00008214                                    68  **************************************************************************************************************   
+00008214  117C 003F 0001                    69  	MOVE.B		#$3f,1(A0)	abilita tastiera, eco, interruzioni enter e buffer
+0000821A                                    70  *					full, cancella video e pulisce buffer di tastiera.
+0000821A                                    71  *
+0000821A  027C F8FF                         72  	ANDI		#$F8FF,SR	Azzera l'interrupt mask.
+0000821E                                    73  *
+0000821E  4E71                              74  main	NOP				Processore è in attesa di qualche interruzione.
+00008220  4EF9 0000821E                     75  	JMP		main
+00008226                                    76  *********************************************************************************************************
+00008226                                    77  *
+00008226                                    78  *************************************************************************
+00008226                                    79  * ISR DELL'INTERRUZIONE DI LIVELLO 1 ( pressione tasto enter ) *
+00008226                                    80  *************************************************************************
+00008226                                    81  *
+00008500                                    82  	ORG	$8500		Interrupt vector.
+00008500                                    83  *
+00008500  2F08                              84  	MOVE.L		A0,-(A7)		Salva nel supervisor stack pointer i registri
+00008502  2F09                              85  	MOVE.L		A1,-(A7)		usati dalla ISR.
+00008504  2F00                              86  	MOVE.L		D0,-(A7)
+00008506                                    87  *
+00008506  307C 2000                         88  	MOVEA.W	#ter,A0		A0 e A1 puntano ai dispositivi TERMINAL e
+0000850A  327C 2004                         89  	MOVEA.W	#usart,A1		USART rispettivamente.
+0000850E                                    90  *
+0000850E                                    91  *********************************************************************************
+0000850E                                    92  *	ACCESSO IN LETTURA ALL'INDIRIZZO DISPARI			*
+0000850E                                    93  *	DELLA SERIALE		=>	REGISTRO STATUS		*
+0000850E                                    94  *										*
+0000850E                                    95  *	STATUS |1 |0 |0 |0 |0 |0 |0 |0 |						*
+0000850E                                    96  *		    |   |   |   |   |   |   |   |__b0 diviene alto quando DATA OUT	*
+0000850E                                    97  *		    |   |   |   |   |   |   |	 viene copiato in TSHIFT REG. (TxRDY), torna	*
+0000850E                                    98  *		    |   |   |   |   |   |   |        basso quando il processore copia 	*
+0000850E                                    99  *		    |   |   |   |   |   |   | 	 un nuovo carattere in DATA OUT	*
+0000850E                                   100  *		    |   |   |   |   |   |   |____b1 diviene alto quando RSHIFT REG.*
+0000850E                                   101  *		    |   |   |   |   |   |    	 viene copiato in DATA IN, torna 	*
+0000850E                                   102  *		    |   |   |   |   |   |	 basso in seguito a lettura da DATAIN*
+0000850E                                   103  *		    |   |   |   |   |   |______Underrun				*
+0000850E                                   104  *		    |   |   |   |   |________Errore di parità			*
+0000850E                                   105  *		    |   |   |   |__________Errore di overrun			*
+0000850E                                   106  *		    |   |   |____________Errore di framing			*
+0000850E                                   107  *		    |   |______________Rilevati bit di sincronismo		*
+0000850E                                   108  *		    |________________DSR attivo				*
+0000850E                                   109  *********************************************************************************
+0000850E  1029 0001                        110  wait11	MOVE.B		1(A1),D0		Controlla se è attivato il segnale DSR della
+00008512  0200 0080                        111  	ANDI.B		#$80,D0				USART ed in caso affermativo trasmette,
+00008516  67F6                             112  	BEQ		wait11					altrimenti attende.
+00008518                                   113  *
+00008518  1029 0001                        114  wait12	MOVE.B		1(A1),D0		Se l'interfaccia seriale è pronta a trasmettere
+0000851C  0200 0001                        115  	ANDI.B		#$01,D0				continua altrimenti attende.
+00008520  67F6                             116  	BEQ		wait12
+00008522                                   117  *
+00008522  1010                             118  	MOVE.B		(A0),D0		Preleva uno alla volta i caratteri presenti nel
+00008524  1280                             119  	MOVE.B		D0,(A1)		buffer di tastiera e li trasmette all'interfaccia
+00008526  0C00 000D                        120  	CMPI.B		#13,D0		seriale finchè non riconosce il tasto enter che
+0000852A  66EC                             121  	BNE		wait12			ha causato l'interruzione.
+0000852C                                   122  
+0000852C                                   123  *
+0000852C  117C 003F 0001                   124  end	MOVE.B		#$3f,1(A0)	Riabilita la tastiera, cancella il video
+00008532                                   125  *						e pulisce il buffer di tastiera.
+00008532                                   126  *	
+00008532  201F                             127  	MOVE.L		(A7)+,D0		Ripristino dei registri
+00008534  225F                             128  	MOVE.L		(A7)+,A1		precedentemente salvati.
+00008536  205F                             129  	MOVE.L		(A7)+,A0
+00008538  4E73                             130  	RTE				Ritorno alla routine interrotta.
+0000853A                                   131  ******************************************************************************************************
+0000853A                                   132  *
+0000853A                                   133  *
+0000853A                                   134  ************************************************************
+0000853A                                   135  * ISR DELL'INTERRUZIONE DI LIVELLO 2 ( buffer full ) *
+0000853A                                   136  ************************************************************
+0000853A                                   137  *
+00008600                                   138  	ORG		$8600		Interrupt vector.
+00008600                                   139  *
+00008600  2F08                             140  	MOVE.L		A0,-(A7)		Salva nel supervisor stack pointer i registri
+00008602  2F09                             141  	MOVE.L		A1,-(A7)		usati dalla ISR.
+00008604  2F00                             142  	MOVE.L		D0,-(A7)
+00008606  2F01                             143  	MOVE.L		D1,-(A7)
+00008608                                   144  *
+00008608  307C 2000                        145  	MOVEA.W	#ter,A0		A0 e A1 puntano ai dispositivi TERMINAL e
+0000860C  327C 2004                        146  	MOVEA.W	#usart,A1		USART rispettivamente.
+00008610                                   147  *
+00008610  1029 0001                        148  wait21	MOVE.B		1(A1),D0		Controlla se è attivato il segnale DSR della
+00008614  0200 0080                        149  	ANDI.B		#$80,D0		USART ed in caso affermativo trasmette,
+00008618  67F6                             150  	BEQ		wait21		altrimenti attende.
+0000861A                                   151  *
+0000861A  103C 00FF                        152  	MOVE.B		#255,D0		Inizializza contatore caratteri nel buffer.
+0000861E  1229 0001                        153  wait22	MOVE.B		1(A1),D1		Se l'interfaccia seriale è pronta a trasmettere
+00008622  0201 0001                        154  	ANDI.B		#$01,D1		continua altrimenti attende.
+00008626  67F6                             155  	BEQ		wait22
+00008628                                   156  *
+00008628  1210                             157  	MOVE.B		(A0),D1		Preleva uno alla volta i 256 caratteri presenti
+0000862A  1281                             158  	MOVE.B		D1,(A1)		nel buffer di tastiera e li trasmette all'interfaccia
+0000862C  57C8 FFF0                        159  	DBEQ		D0,wait22	seriale.
+00008630                                   160  *
+00008630  12BC 000D                        161  	MOVE.B		#13,(A1)
+00008634  117C 003F 0001                   162  	MOVE.B		#$3f,1(A0)	Riabilita la tastiera, cancellare il video
+0000863A                                   163  *						e pulisce il buffer di tastiera.
+0000863A                                   164  *	
+0000863A  221F                             165  	MOVE.L		(A7)+,D1		Ripristino dei registri
+0000863C  201F                             166  	MOVE.L		(A7)+,D0		precedentemente salvati.
+0000863E  225F                             167  	MOVE.L		(A7)+,A1
+00008640  205F                             168  	MOVE.L		(A7)+,A0
+00008642  4E73                             169  	RTE				Ritorno alla routine interrotta.
+00008644                                   170  ******************************************************************************************************
+00008644                                   171  *
+00008644                                   172  *
+00008644                                   173  **************************************************************************************
+00008644                                   174  * ISR DELL'INTERRUZIONE DI LIVELLO 3 ( Interruzione su RxRDY: la seriale ha ricevuto un carattere ) *
+00008644                                   175  **************************************************************************************
+00008644                                   176  *
+00008700                                   177  	ORG		$8700		Interrupt vector.
+00008700                                   178  *
+00008700  2F08                             179  	MOVE.L		A0,-(A7)		Salva nel supervisor stack pointer i registri
+00008702  2F09                             180  	MOVE.L		A1,-(A7)		usati dalla ISR.
+00008704  2F00                             181  	MOVE.L		D0,-(A7)
+00008706                                   182  *
+00008706  307C 2000                        183  	MOVEA.W	#ter,A0		A0 e A1 puntano ai dispositivi TERMINAL e
+0000870A  327C 2004                        184  	MOVEA.W	#usart,A1		USART.
+0000870E                                   185  *
+0000870E  1029 0001                        186  	MOVE.B		1(A1),D0		Controlla se si è verificato qualche errore di
+00008712  0200 0038                        187  	ANDI.B		#$38,D0			trasmissione ed in caso negativo salta alla
+00008716  6700 000C                        188  	BEQ		stampa				routine di stampa, altrimenti visualizza # sul
+0000871A  10BC 0023                        189  	MOVE.B		#$23,(A0)		terminale e cancella errori nel registro di stato
+0000871E  137C 0037 0001                   190  	MOVE.B		#$37,1(A1)		dell'interfaccia seriale.
+00008724                                   191  *
+00008724  1091                             192  stampa	MOVE.B		(A1),(A0)		Stampa sul video il carattere ricevuto.
+00008726                                   193  *	
+00008726  201F                             194  	MOVE.L		(A7)+,D0		Context switch : ripristino dei registri
+00008728  225F                             195  	MOVE.L		(A7)+,A1		precedentemente salvati.
+0000872A  205F                             196  	MOVE.L		(A7)+,A0
+0000872C  4E73                             197  	RTE				Ritorno alla routine interrotta.
+0000872E                                   198  *******************************************************************************************************
+0000872E                                   199  *
+0000872E                                   200  *
+0000872E                                   201  *****************************************************************************************
+0000872E                                   202  * ISR DELL'INTERRUZIONE DI LIVELLO 4 ( Interruzione su TxRDY: la seriale ha trasmesso un carattere ) *
+0000872E                                   203  *****************************************************************************************
+0000872E                                   204  *
+00008800                                   205  	ORG		$8800		Interrupt vector.
+00008800                                   206  *
+00008800  4E73                             207  	RTE				Ritorno alla routine interrotta.
+00008802                                   208  *****************************************************************************************
+00008802                                   209  
+00008802                                   210  	END	START
+
+No errors detected
+No warnings generated

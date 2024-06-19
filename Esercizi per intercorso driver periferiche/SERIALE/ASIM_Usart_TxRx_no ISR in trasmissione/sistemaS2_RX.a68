@@ -1,0 +1,165 @@
+*************************************************************************************************
+*Il programma serve a provare una semplice configurazione costituita da due 
+*sistemi S1 ed S2 dotati entrambi di un processore M68000, una ROM di 8K (addr $0-$1FFF), 
+*una RAM di 10K (addr $8000-$A7FF) e un device seriale USART mappato a $2004.
+*I due USART sono interconnessi tra loro e consentono ai
+*due sistemi di scambiarsi un messaggio. In particolare, il sistema S1 trasferisce un vettore di N caratteri
+*verso il sistema S2 sul canale seriale utilizzando un protocollo asincrono.
+*Il messaggio si trova in un'area di memoria del sistema S1 all'indirizzo $8000
+*e viene salvato in dal sistema S2 nella propria aria di memoria a partire dall'indirizzo $8000.
+*
+*Questo driver serve per la programmazione del sistema S2, che riceve il messaggio sulla seriale
+*utilizzando le interruzioni.
+*
+*Il segnale di interruzione, associato al segnale RxRDY della seriale, è collegato alla linea a priorità 3 del processore 
+*(come impostato nel file di configurazione in COM2), la cui routine di servizio è mappata sull' autovettore 27, indirizzo $6C in ROM.
+*L'indirizzo posto in tale locazione, che costituisce l'entry point della ISR, è $8700.
+*
+
+************************************************************
+**********AREA DATI**************************************
+	ORG	$8000
+MSG	DS.B	6
+DIM	DC.B	6
+COUNTRIC	DC.B	0
+
+
+
+***********************************************************
+***********AREA MAIN*********************************	
+	ORG    $8200
+
+USARTD	EQU    $2004	;indirizzo dato
+USARTC	EQU    $2005	;indirizzo stato/controllo
+
+MAIN	JSR    INITUSART	;inizializza USART
+
+	MOVE.W	SR,D0	;legge il registro di stato
+	ANDI.W	#$D8FF,D0 ;maschera per reg stato (stato utente, int abilitati)
+	MOVE.W	D0,SR	;pone liv int a 000
+
+	MOVEA.L	#USARTC,A2	;indirizzo registro controllo/stato
+
+CHECKDSR	MOVE.B	(A2),D0	;Controlla se è attivato il segnale DSR della USART che indica che il model è pronto.
+	ANDI.B		#$80,D0		;Poichè la configurazione prevede che DTR=1 in entrambi
+*						i sistemi, e poichè tale segnale è direttamente connesso con DSR
+*						dell'altra seriale, la connessione è stabilita.
+*						Nota che anche RTS è alto in entrambi,
+*						quindi anche la successiva fase di sincronizzazione è correttamente completata.
+
+	BEQ		CHECKDSR		
+
+
+LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+	
+
+
+* *****        INIZIALIZZAZIONE USART        *****
+
+******************************************************************************************
+*	PRIMO ACCESSO IN SCRITTURA INDIRIZZO DISPARI => REGISTRO MODE	
+*									
+*	MODE |  0  |  1  |  0  |  1  |  1   1  |  0  |  1  |							
+*	        |     |      |      |     |        |     |____b0=0 Trasmissione Sincrona, b0=1 Asincrona			
+*	        |     |      |      |     |        |_______ b1 non utilizzato					
+*	        |     |      |            |____________b3b2="00"(5bit/dato), "01"(6bit/dato), "10"(7bit/dato), "11"(8bit/dato)					
+*	        |     |      |      |________________ b4=0: non trasmette bit di parità, b4=1: lo trasmette			
+*	              |      |____________________b5=0: parità pari, b5=1: parità dispari	    	
+*	      |       |________________________b6=0: 1 bit di stop, b6=1: 2 bit di stop					
+*	        |____________________________b7=0: 1 carattere di sync, b7=1: 2 caratteri di sync (in trasmissione sincrona)	
+*
+*****************************************************************************************   
+*
+INITUSART	MOVE.B		#$5D,USARTC	trasmissione asincrona, 8 bit di informazione
+*							bit di parità dispari e 2 bit di stop
+*
+*****************************************************************************************
+*	SECONDO ACCESSO IN SCRITTURA INDIRIZZO DISPARI => REGISTRO CNTRL	
+*									
+*	MODE |  0  |  0  |  1  |  1  |  0  | 1  |  1  |  0  |							
+*	         |    |     |      |    |     |    |     |____b0=1: abilita trasmettitore, b0=0: disabilita trasmettitrore			
+*	         |    |     |      |    |     |    |_______ b1=1: attiva DTR, b1=0: disattiva DTR					
+*            |    |     |      |    |     |___________b2=1: abitilita ricevitore, b0=0: disabilita ricevitore					
+*	         |    |     |      |    |______________b3 non utilizzato			
+*	         |    |     |      |_________________b4=1: cancella bit di errore, b4=0: non cancella	    	
+*	         |    |     |_____________________b5=1: attiva RTS, b6=0: disattiva RTS					
+*	         |    |_________________________b6=1: resetta l'interfaccia seriale	
+*	         |_____________________________b7=1: porta il ricevitore nello stato HUNT in cui cerca i caratteri di sincronismo sync
+*								(in comunicazione sincrona)
+*
+******************************************************************************************
+	MOVE.B		#$36,USARTC	;abilita ricevitore, cancella flags
+*						di errore e attiva i segnali di handshaking.
+*
+	RTS
+
+
+*****************************************************************************************
+* ISR ricezione (Interruzione su RxRDY: la seriale ha ricevuto un carattere ) *
+* mappata su linea 3, autovettore 27, indirizzo $6C in ROM
+*****************************************************************************************
+*
+	ORG $8700		
+
+INT3    	MOVE.L  A1,-(A7)		;salvataggio registri
+	MOVE.L  A0,-(A7)
+	MOVE.L  D0,-(A7)
+	
+	MOVEA.L	#USARTD,A1
+	MOVEA.L	#MSG,A0	;indirizzo area di salvataggio
+	MOVE.B	COUNTRIC,D0	;contatore corrente degli elementi ricevuti
+		
+RICEZ	MOVE.B 	(A1),(A0,D0)	;riceve un carattere e lo memorizza
+	
+	ADD.B	#1,D0
+	MOVE.B	D0,COUNTRIC	;aggiorna contatore caratteri ricevuti
+
+FINE	MOVE.L  (A7)+,D0	;ripristino registri 
+	MOVE.L  (A7)+,A0
+	MOVE.L  (A7)+,A1
+	
+	RTE			
+*****************************************************************************************
+
+
+
+	END	MAIN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

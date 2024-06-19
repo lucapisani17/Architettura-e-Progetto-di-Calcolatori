@@ -1,0 +1,215 @@
+************************************************************************************
+*OGGETTO: Lo scopo del programma è provare la configurazione USART.CFG*
+*costituita da due sistemi gemelli ciascuno con un processore M68000, una  *
+*memoria ROM di 8k (addr $0-1FFF), una RAM di 10k (addr. $8000-$A7FF), un *
+*device seriale USART mappato a $2004, un device seriale di tipo TERMINAL*
+*mappato a $2000.								     *
+*Alla tasiera  sono associati due tipi di interruzione:			     *
+*Interruzione su ENTER: linea 1, autovettore 25, mappata a $64, ISR a $8500 *
+*Interruzione su BUFFER FULL: linea 2, autovettore 26, mappata a $68, ISR a*
+*$8600										     *
+*Al dispositivo USART sono associati due livelli di interruzione:		     *
+*Interruzione su RxRDY: linea 3, autovettore 27, mappata a $6C,ISR a $8700 *
+*Interruzione su TxRDY: linea 4, autovettore 28, mappata a $70, ISR a $8800 *	
+*ALTRO: Il presente listato va caricato in entrambi i sistemi. 
+************************************************************************************
+
+usart	EQU		$2004		Interfaccia seriale.
+ter	EQU		$2000		Terminale video.
+
+*
+	ORG	$8200		Indirizzo di partenza del main program.
+*
+START	MOVEA.W	#usart,A0		Inizializza l'interfaccia seriale,
+*****************************************************************************************
+*	PRIMO ACCESSO IN SCRITTURA ALLA SERIALE => REGISTRO MODE	*
+*	INDIRIZZO DISPARI								*
+*	MODE | 0 | 1 | 0 | 1 | 1   1 | - | 1 |							*
+*		   |   |   |   |     |     |   |____Trasmissione Asincrona			*
+*		   |   |   |   |     |     |________Non utilizzato					*
+*		   |   |   |   |     |______________8 bit per dato					*
+*		   |   |   |   |____________________trasmette bit di parità			*
+*		   |   |   |________________________tipo di parità dispari	    	*
+*		   |   |____________________________2 bit di stop					*
+*		   |________________________________#bit di sync in trasmissione asincrona	*
+*****************************************************************************************   
+*
+	MOVE.B		#$5D,1(A0)	trasmissione asincrona, 8 bit di informazione
+*							bit di parità dispari e 2 bit di stop,
+*****************************************************************************************
+*	SECONDO ACCESSO IN SCRITTURA ALLA SERIALE => REGISTRO CNTRL	*
+*	INDIRIZZO DISPARI								*
+*	CNTRL | 0 | 0 | 1 | 1 | 0 | 1 | 1 | 1 |							*
+*		    |   |   |   |   |   |   |   |__Abilita trasmettitore				*
+*		    |   |   |   |   |   |   |______Attiva DTR					*
+*		    |   |   |   |   |   |__________Attiva ricevitore				*
+*		    |   |   |   |   |______________Non utilizzato					*
+*		    |   |   |   |__________________Azzera bits di errore in STATUS		*
+*		    |   |   |______________________Attiva RTS					*
+*		    |   |__________________________Non resetta la periferica			* 
+*		    |______________________________Non va in 'hunt'				*
+*****************************************************************************************
+	MOVE.B		#$37,1(A0)	abilita trasmettitore e ricevitore, cancella flags
+*					di errore e attiva i segnali di handshaking.
+*
+	MOVEA.W	#ter,A0		Inizializza il terminale video,
+**************************************************************************************************************
+*INIZIALIZZAZIONE DEL TERMINALE: 
+*
+*	CNTRL |0 |0 |1 |1 |1 |1 |1 |1 |
+*		  |   |   |   |   |   |   |   |__Abilita interruzioni su Buffer full
+*		  |   |   |   |   |   |   |____Abilita interruzioni su Enter
+*		  |   |   |   |   |   |______Pulisci schermo
+*		  |   |   |   |   |________Pulisci buffer tastiera
+*		  |   |   |   |__________Abilita tastiera
+*		  |   |   |____________Abilita echo
+*		  |   |______________Stato di buffer full
+*		  |________________Stato di Enter inviato
+**************************************************************************************************************   
+	MOVE.B		#$3f,1(A0)	abilita tastiera, eco, interruzioni enter e buffer
+*					full, cancella video e pulisce buffer di tastiera.
+*
+	ANDI		#$F8FF,SR	Azzera l'interrupt mask.
+*
+main	NOP				Processore è in attesa di qualche interruzione.
+	JMP		main
+*********************************************************************************************************
+*
+*************************************************************************
+* ISR DELL'INTERRUZIONE DI LIVELLO 1 ( pressione tasto enter ) *
+*************************************************************************
+*
+	ORG	$8500		Interrupt vector.
+*
+	MOVE.L		A0,-(A7)		Salva nel supervisor stack pointer i registri
+	MOVE.L		A1,-(A7)		usati dalla ISR.
+	MOVE.L		D0,-(A7)
+*
+	MOVEA.W	#ter,A0		A0 e A1 puntano ai dispositivi TERMINAL e
+	MOVEA.W	#usart,A1		USART rispettivamente.
+*
+*********************************************************************************
+*	ACCESSO IN LETTURA ALL'INDIRIZZO DISPARI			*
+*	DELLA SERIALE		=>	REGISTRO STATUS		*
+*										*
+*	STATUS |1 |0 |0 |0 |0 |0 |0 |0 |						*
+*		    |   |   |   |   |   |   |   |__b0 diviene alto quando DATA OUT	*
+*		    |   |   |   |   |   |   |	 viene copiato in TSHIFT REG. (TxRDY), torna	*
+*		    |   |   |   |   |   |   |        basso quando il processore copia 	*
+*		    |   |   |   |   |   |   | 	 un nuovo carattere in DATA OUT	*
+*		    |   |   |   |   |   |   |____b1 diviene alto quando RSHIFT REG.*
+*		    |   |   |   |   |   |    	 viene copiato in DATA IN, torna 	*
+*		    |   |   |   |   |   |	 basso in seguito a lettura da DATAIN*
+*		    |   |   |   |   |   |______Underrun				*
+*		    |   |   |   |   |________Errore di parità			*
+*		    |   |   |   |__________Errore di overrun			*
+*		    |   |   |____________Errore di framing			*
+*		    |   |______________Rilevati bit di sincronismo		*
+*		    |________________DSR attivo				*
+*********************************************************************************
+wait11	MOVE.B		1(A1),D0		Controlla se è attivato il segnale DSR della
+	ANDI.B		#$80,D0				USART ed in caso affermativo trasmette,
+	BEQ		wait11					altrimenti attende.
+*
+wait12	MOVE.B		1(A1),D0		Se l'interfaccia seriale è pronta a trasmettere
+	ANDI.B		#$01,D0				continua altrimenti attende.
+	BEQ		wait12
+*
+	MOVE.B		(A0),D0		Preleva uno alla volta i caratteri presenti nel
+	MOVE.B		D0,(A1)		buffer di tastiera e li trasmette all'interfaccia
+	CMPI.B		#13,D0		seriale finchè non riconosce il tasto enter che
+	BNE		wait12			ha causato l'interruzione.
+
+*
+end	MOVE.B		#$3f,1(A0)	Riabilita la tastiera, cancella il video
+*						e pulisce il buffer di tastiera.
+*	
+	MOVE.L		(A7)+,D0		Ripristino dei registri
+	MOVE.L		(A7)+,A1		precedentemente salvati.
+	MOVE.L		(A7)+,A0
+	RTE				Ritorno alla routine interrotta.
+******************************************************************************************************
+*
+*
+************************************************************
+* ISR DELL'INTERRUZIONE DI LIVELLO 2 ( buffer full ) *
+************************************************************
+*
+	ORG		$8600		Interrupt vector.
+*
+	MOVE.L		A0,-(A7)		Salva nel supervisor stack pointer i registri
+	MOVE.L		A1,-(A7)		usati dalla ISR.
+	MOVE.L		D0,-(A7)
+	MOVE.L		D1,-(A7)
+*
+	MOVEA.W	#ter,A0		A0 e A1 puntano ai dispositivi TERMINAL e
+	MOVEA.W	#usart,A1		USART rispettivamente.
+*
+wait21	MOVE.B		1(A1),D0		Controlla se è attivato il segnale DSR della
+	ANDI.B		#$80,D0		USART ed in caso affermativo trasmette,
+	BEQ		wait21		altrimenti attende.
+*
+	MOVE.B		#255,D0		Inizializza contatore caratteri nel buffer.
+wait22	MOVE.B		1(A1),D1		Se l'interfaccia seriale è pronta a trasmettere
+	ANDI.B		#$01,D1		continua altrimenti attende.
+	BEQ		wait22
+*
+	MOVE.B		(A0),D1		Preleva uno alla volta i 256 caratteri presenti
+	MOVE.B		D1,(A1)		nel buffer di tastiera e li trasmette all'interfaccia
+	DBEQ		D0,wait22	seriale.
+*
+	MOVE.B		#13,(A1)
+	MOVE.B		#$3f,1(A0)	Riabilita la tastiera, cancellare il video
+*						e pulisce il buffer di tastiera.
+*	
+	MOVE.L		(A7)+,D1		Ripristino dei registri
+	MOVE.L		(A7)+,D0		precedentemente salvati.
+	MOVE.L		(A7)+,A1
+	MOVE.L		(A7)+,A0
+	RTE				Ritorno alla routine interrotta.
+******************************************************************************************************
+*
+*
+**************************************************************************************
+* ISR DELL'INTERRUZIONE DI LIVELLO 3 ( Interruzione su RxRDY: la seriale ha ricevuto un carattere ) *
+**************************************************************************************
+*
+	ORG		$8700		Interrupt vector.
+*
+	MOVE.L		A0,-(A7)		Salva nel supervisor stack pointer i registri
+	MOVE.L		A1,-(A7)		usati dalla ISR.
+	MOVE.L		D0,-(A7)
+*
+	MOVEA.W	#ter,A0		A0 e A1 puntano ai dispositivi TERMINAL e
+	MOVEA.W	#usart,A1		USART.
+*
+	MOVE.B		1(A1),D0		Controlla se si è verificato qualche errore di
+	ANDI.B		#$38,D0			trasmissione ed in caso negativo salta alla
+	BEQ		stampa				routine di stampa, altrimenti visualizza # sul
+	MOVE.B		#$23,(A0)		terminale e cancella errori nel registro di stato
+	MOVE.B		#$37,1(A1)		dell'interfaccia seriale.
+*
+stampa	MOVE.B		(A1),(A0)		Stampa sul video il carattere ricevuto.
+*	
+	MOVE.L		(A7)+,D0		Context switch : ripristino dei registri
+	MOVE.L		(A7)+,A1		precedentemente salvati.
+	MOVE.L		(A7)+,A0
+	RTE				Ritorno alla routine interrotta.
+*******************************************************************************************************
+*
+*
+*****************************************************************************************
+* ISR DELL'INTERRUZIONE DI LIVELLO 4 ( Interruzione su TxRDY: la seriale ha trasmesso un carattere ) *
+*****************************************************************************************
+*
+	ORG		$8800		Interrupt vector.
+*
+	RTE				Ritorno alla routine interrotta.
+*****************************************************************************************
+
+	END	START
+
+
+
+
+

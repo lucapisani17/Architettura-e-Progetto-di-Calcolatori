@@ -1,0 +1,1 @@
+Utilizzare l'eseguibile ASIM in questa cartella per l'esecuzione dell'esempio.
