@@ -1,0 +1,105 @@
+00000000                                     1  *************************************************************************************************
+00000000                                     2  * D trasmette un carattere ad A
+00000000                                     3  	
+00000000                                     4  
+00000000                                     5  ************************************************************
+00000000                                     6  **********AREA DATI**************************************
+00008000                                     7  	ORG	$8000
+00008000  FF                                 8  CHAR	DC.B	$FF
+00008001  A3                                 9  TIMER	DC.B	$A3	*contatore che decremento per far scattare una sorta di timer ed inviare il carattere ad A
+00008002                                    10  
+00008002                                    11  ***********************************************************
+00008002                                    12  ***********AREA MAIN*********************************	
+00008200                                    13  	ORG    $8200
+00008200                                    14  
+00008200  =00002002                         15  USARTD	EQU		$2002		;registro dato USART
+00008200  =00002003                         16  USARTC	EQU		$2003		;registro di controllo USART
+00008200                                    17  
+00008200  4EB9 0000823A                     18  MAIN	JSR    INITUSART	;inizializza USART
+00008206                                    19  
+00008206  40C0                              20  	MOVE.W	SR,D0	;legge il registro di stato
+00008208  0240 D8FF                         21  	ANDI.W	#$D8FF,D0 ;maschera per reg stato (stato utente, int abilitati)
+0000820C  46C0                              22  	MOVE.W	D0,SR	;pone liv int a 000
+0000820E                                    23  
+0000820E                                    24  
+0000820E  227C 00002002                     25  	MOVEA.L	#USARTD,A1	;indirizzo registro dato
+00008214  247C 00002003                     26  	MOVEA.L	#USARTC,A2	;indirizzo registro controllo/stato
+0000821A                                    27  
+0000821A  1239 00008000                     28  	MOVE.B	CHAR,D1	;preparo il carattere da trasmettere in un registro
+00008220                                    29  	
+00008220                                    30  *aspetto un tempo definito dal timer prima di trasmettere:
+00008220  1039 00008001                     31  	MOVE.B	TIMER,D0
+00008226  5340                              32  WAITtimer		SUB	#1,D0
+00008228  66FC                              33  	BNE	WAITtimer
+0000822A                                    34  
+0000822A                                    35  
+0000822A  1012                              36  CHECKDSR	MOVE.B	(A2),D0			;Controlla se è attivato il segnale DSR della USART ed in caso affermativo trasmette,
+0000822C  0200 0080                         37  	ANDI.B		#$80,D0		;altrimenti attende. Poichè la configurazione prevede che DTR=1 in entrambi
+00008230                                    38  *						i sistemi, e poichè tale segnale è direttamente connesso con DSR 
+00008230                                    39  *						dell'altra seriale, la connessione è stabilita. Nota che anche RTS è alto in entrambi,
+00008230                                    40  *						quindi anche la successiva fase di sincronizzazione è correttamente completata.
+00008230  67F8                              41  	BEQ		CHECKDSR		
+00008232                                    42  
+00008232                                    43  
+00008232  1281                              44  INVIO	MOVE.B	D1,(A1)		;invio carattere sulla seriale
+00008234                                    45  	
+00008234  4EF9 00008234                     46  LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+0000823A                                    47  
+0000823A                                    48  
+0000823A                                    49  * *****        INIZIALIZZAZIONE USART        *****
+0000823A                                    50  
+0000823A                                    51  ******************************************************************************************
+0000823A                                    52  *	PRIMO ACCESSO IN SCRITTURA INDIRIZZO DISPARI => REGISTRO MODE	
+0000823A                                    53  *									
+0000823A                                    54  *	MODE |  0  |  1  |  0  |  1  |  1   1  |  0  |  1  |							
+0000823A                                    55  *	              |       |      |      |        |        |      |____b0=0 Trasmissione Sincrona, b0=1 Asincrona			
+0000823A                                    56  *	              |       |      |      |        |        |_______ b1 non utilizzato					
+0000823A                                    57  *	              |       |      |      |        |____________b3b2="00"(5bit/dato), "01"(6bit/dato), "10"(7bit/dato), "11"(8bit/dato)					
+0000823A                                    58  *	              |       |      |      |________________ b4=0: non trasmette bit di parità, b4=1: lo trasmette			
+0000823A                                    59  *	              |       |      |____________________b5=0: parità pari, b5=1: parità dispari	    	
+0000823A                                    60  *	              |       |________________________b6=0: 1 bit di stop, b6=1: 2 bit di stop					
+0000823A                                    61  *	              |____________________________b7=0: 1 carattere di sync, b7=1: 2 caratteri di sync (in trasmissione sincrona)	
+0000823A                                    62  *
+0000823A                                    63  *****************************************************************************************   
+0000823A                                    64  *
+0000823A  11FC 005D 2003                    65  INITUSART	MOVE.B		#$5D,USARTC	trasmissione asincrona, 8 bit di informazione
+00008240                                    66  *							bit di parità dispari e 2 bit di stop
+00008240                                    67  *
+00008240                                    68  *****************************************************************************************
+00008240                                    69  *	SECONDO ACCESSO IN SCRITTURA INDIRIZZO DISPARI => REGISTRO CNTRL	
+00008240                                    70  *									
+00008240                                    71  *	MODE |  0  |  0  |  1  |  0  |  0  | 0  |  1  |  1  |							
+00008240                                    72  *	              |       |      |      |      |     |      |      |____b0=1: abilita trasmettitore, b0=0: disabilita trasmettitrore			
+00008240                                    73  *	              |       |      |      |      |     |      |_______ b1=1: attiva DTR, b1=0: disattiva DTR					
+00008240                                    74  *	              |       |      |      |      |     |___________b2=1: abitilita ricevitore, b0=0: disabilita ricevitore					
+00008240                                    75  *	              |       |      |      |      |______________b3 non utilizzato			
+00008240                                    76  *	              |       |      |      |_________________b4=1: cancella bit di errore, b4=0: non cancella	    	
+00008240                                    77  *	              |       |      |_____________________b5=1: attiva RTS, b6=0: disattiva RTS					
+00008240                                    78  *	              |       |_________________________b6=1: resetta l'interfaccia seriale	
+00008240                                    79  *	              |_____________________________b7=1: porta il ricevitore nello stato HUNT in cui cerca i caratteri di sincronismo sync
+00008240                                    80  *								(in comunicazione sincrona)
+00008240                                    81  *
+00008240                                    82  ******************************************************************************************
+00008240  11FC 0023 2003                    83  	MOVE.B		#$23,USARTC	abilita trasmettitore
+00008246                                    84  *						e attiva i segnali di handshaking.
+00008246                                    85  *
+00008246  4E75                              86  	RTS
+00008248                                    87  
+00008248                                    88  
+00008248                                    89  *****************************************************************************************
+00008248                                    90  * ISR trasmissione (Interruzione su TxRDY: la seriale ha trasmesso un carattere ) *
+00008248                                    91  * mappata su autovettore 28, indirizzo $70 in ROM
+00008248                                    92  * la ISR non fa nulla ma è comunque presente perchè non è possibile disabilitare 
+00008248                                    93  * le interrupt
+00008248                                    94  *****************************************************************************************
+00008248                                    95  *
+00008800                                    96  	ORG $8800		
+00008800                                    97  
+00008800  4E73                              98  	RTE
+00008802                                    99  
+00008802                                   100  
+00008802                                   101  
+00008802                                   102  	END	MAIN
+
+No errors detected
+No warnings generated

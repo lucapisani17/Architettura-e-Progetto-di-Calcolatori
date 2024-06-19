@@ -1,0 +1,395 @@
+**********************************
+*	Il ricevitore, riceve due messaggi da due sistemi e poi decide di copiare il messaggio in una specifica area di memoria
+*	solo se i messaggi sono uguali. Tale ricevitore, dunque presenta due dispositivi PIA, che si comportano da ricevitori.
+*	una PIA genera una interruzione di livello 3, mentre l'altra di livello 4
+
+***********************************
+
+
+	ORG	$8000
+APP1	DS.B	16		*Appoggio per il messaggio ricevuto dal primo tx
+APP2	DS.B	16		*appoggio per il messaggio ricevuto dal secondo tx
+MES	DS.B	16
+SIZE	DC.B	1
+DIM1	DS.B	1	*dimensione del messaggio in byte: il trasmettitore invia una dimensione che non dipende dai byte
+DIM2	DS.B	1	*dimensione in byte.
+DMAX	DC.B	16	*dimensione massima in byte
+RDIM1	DS.B	1	*conserviamo la reale dimensione del messaggio: può accadere che la dimensione ricevuta è maggiore della dimensione massima
+RDIM2	DS.B	1	
+CNTB1	DC.B	0	*numero di byte ricevuti
+CNTB2	DC.B	0
+FIN1	DC.B	0	*verifica che il primo messaggio è stato completato
+FIN2	DC.B	0	*verifica che il secondo messaggio è stato completato 
+FASE1	DC.B	1
+FASE2	DC.B	1
+
+PIADA	EQU    $2004	
+PIACA	EQU    $2005	
+PIADA2	EQU	$2008
+PIACA2	EQU	$2009
+
+
+	ORG	$8200
+
+INIT	JSR	INIZIALIZZA
+
+	MOVE.W	SR,D1
+	ANDI.W	#$D8FF,D1
+	MOVE.W	D1,SR
+
+
+LOOP	JMP	LOOP
+
+
+
+INIZIALIZZA
+	MOVE.B	#0,PIACA
+	MOVE.B	#0,PIADA
+	MOVE.B	#%00100101,PIACA
+	MOVE.B	#0,PIACA2
+	MOVE.B	#0,PIADA2
+	MOVE.B	#%00100101,PIACA2
+	RTS
+
+
+
+
+
+
+***********************************************SOTTOPROGRAMMI*************************************
+*		STACK
+*		D2	(4 BYTE)
+*		D1	(4 BYTE)
+*		D0	(4 BYTE)
+*		A2	(4 BYTE)
+*		A1	(4 BYTE)
+*		A0	(4 BYTE)
+*		A6	(4 BYTE)   <---A6
+*		IND. RITORNO(4 BYTE)
+*		DMAX	(1 BYTE)
+*		SIZE	(1 BYTE)
+*		RDIM	(4 BYTE)
+*		DIM	(4 BYTE) indirizzo della dimensione
+*		PIADA  (4 BYTE)
+
+PRENDIDIMENSIONE				*--> serve per prendere la dimensione del messaggio
+	LINK	A6,#-24
+	MOVE.L	A0,-4(A6)
+	MOVE.L	A1,-8(A6)
+	MOVE.L	A2,-12(A6)
+	MOVE.L	D0,-16(A6)
+	MOVE.L	D1,-20(A6)
+	MOVE.L	D2,-24(A6)
+		
+	MOVE.B	8(A6),D1	*Dmax
+	MOVE.B	9(A6),D0	*size
+	MOVE.L	10(A6),A2	*RDIM
+	MOVE.L	14(A6),A1	*DIM1
+	MOVE.L	18(A6),A0
+
+	MOVE.B	(A0),D2			*lettura
+	MULU		D0,D2			*dim*size= dimensione in byte
+	MOVE.B	D2,(A2)			*Mettiamo la dimensione reale del messaggio
+	CMP.B		D1,D2		
+	BGT		TRONCA		*Se la dimensione ricevuta è maggiore a quella massima
+	MOVE.B	D2,(A1)			*se rispettiamo la dimensione possiamo mettere D2 come la dimensione del messaggio
+	JMP		RITORNO
+TRONCA
+	MOVE.B	D1,(A1)
+
+RITORNO
+	MOVE.L	-4(A6),A0
+	MOVE.L	-8(A6),A1
+	MOVE.L	-12(A6),A2
+	MOVE.L	-16(A6),D0
+	MOVE.L	-20(A6),D1
+	MOVE.L	-24(A6),D2
+	UNLK		A6
+
+
+	RTS
+
+
+*		STACK
+*		D2	(4 BYTE)
+*		D1	(4 BYTE)
+*		D0	(4 BYTE)
+*		A2	(4 BYTE)
+*		A1	(4 BYTE)
+*		A6	(4 BYTE)   <---A6
+*		IND. RITORNO(4 BYTE)
+*		DIM	(4 BYTE)	indirizzo della dimenzione
+*		MES	(4 BYTE)	indirizzo della locazione di memoria dove copiare il messaggio
+*		APP2	(4 BYTE)
+*		APP1	(4 BYTE)  	Indirizzi dove sono i messaggi ricevuti
+
+
+SOTTOPR_COPIA
+	LINK	A6,#-20
+	MOVE.L	A1,-4(A6)
+	MOVE.L	A2,-8(A6)
+	MOVE.L	D0,-12(A6)
+	MOVE.L	D1,-16(A6)
+	MOVE.L	D2,-20(A6)
+
+	CLR	D0
+	CLR	D1
+	CLR	D2
+	
+	MOVE.L	8(A6),A1	*Dimensione del messaggio da confrontare/copiare
+	MOVE.B	(A1),D2
+	MOVE.L	20(A6),A1
+	MOVE.L	16(A6),A2
+	
+CONF
+	MOVE.B	(A1),D0
+	CMP.B		(A2),D0
+	BNE		STOP			*dobbiamo uscire
+	ADDA		#1,A1
+	ADDA		#1,A2
+	ADD.B		#1,D1
+	CMP.B		D1,D2
+	BNE		CONF
+
+	CLR	D1
+
+	SUBA	D2,A1
+	MOVE.L	12(A6),A2		*locazione dove memorizzare il messaggio
+COPIA
+	MOVE.B	(A1),(A2)	
+	ADDA		#1,A1
+	ADDA		#1,A2
+	ADD.B		#1,D1
+	CMP.B		D1,D2
+	BNE		COPIA
+
+STOP	
+	MOVE.L	-4(A6),A1
+	MOVE.L	-8(A6),A2
+	MOVE.L	-12(A6),D0
+	MOVE.L	-16(A6),D1
+	MOVE.L	-20(A6),D2
+	UNLK		A6
+	RTS
+
+
+
+*******Interrupt livello 3-->PIA1
+	ORG	$8700
+*Alza maschera interruzioni altrimenti interruzione 4  interrompe sempre. 
+
+	ORI.W	#$0700,SR			
+
+INT3	CMP.B		#1,FASE1
+	BNE	MESSAGGIO
+	
+	MOVE.L	#PIADA,-(A7)
+	MOVE.L	#DIM1,-(A7)
+	MOVE.L	#RDIM1,-(A7)
+	MOVE.B	SIZE,-(A7)
+	MOVE.B	DMAX,-(A7)
+	
+	JSR	PRENDIDIMENSIONE
+
+	ADDA	#14,A7
+
+	ADD.B	#1,FASE1
+
+	RTE
+
+MESSAGGIO	
+	CMP.B		#2,FASE1
+	BNE		ESCI
+	
+	MOVE.L	A0,-(A7)
+	MOVE.L	A1,-(A7)
+	MOVE.L	D0,-(A7)	*per dimensione
+	MOVE.L	D1,-(A7)	* per dimensione vera del messaggio
+	MOVE.L	D2,-(A7)	*per CNTB
+	MOVE.L	D3,-(A7)	*per appoggio
+	
+
+	MOVEA.L	#PIADA,A0
+	MOVEA.L	#APP1,A1
+	MOVE.B	DIM1,D0
+	MOVE.B	RDIM1,D1
+	MOVE.B	CNTB1,D2
+
+	CMP.B		D0,D2		*confronto il numero di byte ricevuti e il numero totale da memorizzare
+	BEQ		NOMEM		*se il numero di byte ricevuti è maggiore o uguale al numero totale di byte da memorizzare, stiamo ricevendo
+	CMP.B		D0,D2		*una parte del messaggio che non dobbiamo considerare. Il ricevitore deve infatti memorizzare nelle locazioni
+	BGT		NOMEM	* di appoggio un numero di byte pari a DIM1
+	ADDA		D2,A1
+	MOVE.B	(A0),(A1)
+	ADD.B		#1,D2
+	CMP.B		D2,D0
+	BEQ		VERIFICA
+	JMP		PRBYTE
+
+NOMEM
+	*in questa parte non dobbiamo memorizzare il byte ricevuto, facciamo solo una lettura in modo da non bloccare il trasmettitore
+	MOVE.B	(A0),D3
+	ADD.B		#1,D2		*Continuo ad incrementare D2
+	CMP.B		D2,D1		*confronto con dimensione vera totale
+	BNE		PRBYTE
+	MOVE.B	#0,D2		*dopo aver ricevuto tutti possiamo ripristinare D2.
+	MOVE.B	#1,FASE1		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+	JMP		PRBYTE
+
+
+*Il confronto e la copia sono effettuati solo se sono completati tutti e due i messaggi
+VERIFICA
+	MOVE.B	#1,FIN1		*indico che la periferica ha terminato di ricevere
+	CMP.B		#1,FIN2		*verifico che anche l'altra ha terminato in modo da poter confrontare i due messaggi
+	BNE		PIA2WAIT
+
+*Facciamo il confronto e la copia: dopo aver fatto questo, dobbiamo comunque verificare di aver terminato la fase e dunque verificare che possiamo ripristinare D2 e la FASE
+
+	CMP.B		DIM2,D0
+	BNE		PIA2WAIT
+
+*Faccio il confronto e la copia
+	MOVE.L	#APP1,-(A7)	*-4
+	MOVE.L	#APP2,-(A7)	*-4
+	MOVE.L	#MES,-(A7)	*-4
+	MOVE.L	#DIM1,-(A7)	*-4
+	
+	JSR	SOTTOPR_COPIA
+
+	ADDA	#16,A7			*ripristino A7
+
+
+PIA2WAIT
+						*verifichiamo se possiamo ripristinare D2 e usciamo dalla interruzione
+	CMP.B		D0,D1			* Possiamo ripristinare tutto se la dimensione dei byte ricevuti e la dimensione vera del messaggio (RDIM) sono uguali
+	BNE		PRBYTE
+	MOVE.B	#0,D2	
+	MOVE.B	#1,FASE1		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+
+
+PRBYTE
+	
+	MOVE.B	D2,CNTB1
+
+	MOVE.L	(A7)+,D3
+	MOVE.L	(A7)+,D2
+	MOVE.L	(A7)+,D1
+	MOVE.L	(A7)+,D0
+	MOVE.L	(A7)+,A1
+	MOVE.L	(A7)+,A0
+
+ESCI	RTE
+
+
+*******Interrupt livello 4-->PIA2
+
+
+	ORG	$8900
+INT4	CMP.B		#1,FASE2
+	BNE		M2MESS
+	
+	MOVE.L	#PIADA2,-(A7) 			*-4
+	MOVE.L	#DIM2,-(A7)			*-4
+	MOVE.L	#RDIM2,-(A7)			*-4
+	MOVE.B	SIZE,-(A7)			*-1
+	MOVE.B	DMAX,-(A7)			*-1 tot=14
+	
+	JSR	PRENDIDIMENSIONE
+
+	ADDA	#14,A7
+
+
+	ADD.B	#1,FASE2
+		
+	RTE
+M2MESS
+	CMP.B		#2,FASE2
+	BNE		FINITO
+	
+	MOVE.L	A0,-(A7)
+	MOVE.L	A1,-(A7)
+	MOVE.L	D0,-(A7)	*per dimensione
+	MOVE.L	D1,-(A7)	* per dimensione vera del messaggio
+	MOVE.L	D2,-(A7)	*per CNTB
+	MOVE.L	D3,-(A7)	*per appoggio
+	CLR	D0
+	CLR	D1
+	CLR	D2
+
+	
+	MOVEA.L	#PIADA2,A0
+	MOVEA.L	#APP2,A1
+
+	MOVE.B	DIM2,D0
+	MOVE.B	RDIM2,D1
+	MOVE.B	CNTB2,D2
+
+	CMP.B		D0,D2		*confronto il numero di byte ricevuti e il numero totale da memorizzare
+	BEQ		SALTAR		*se il numero di byte ricevuti è maggiore o uguale al numero totale di byte da memorizzare, stiamo ricevendo
+	CMP.B		D0,D2		*una parte del messaggio che non dobbiamo considerare
+	BGT		SALTAR	
+	ADDA		D2,A1
+	MOVE.B	(A0),(A1)
+	ADD.B		#1,D2
+	CMP.B		D2,D0
+	BEQ		CONTROLLOFINE
+	JMP		BYTE
+
+SALTAR
+	*in questa parte non dobbiamo memorizzare il byte ricevuto, facciamo solo una lettura in modo da non bloccare il trasmettitore
+	MOVE.B	(A0),D3
+	ADD.B		#1,D2		*Continuo ad incrementare D2
+	CMP.B		D2,D1		*confronto con dimensione vera totale
+	BNE		BYTE
+	MOVE.B	#0,D2		*dopo aver ricevuto tutti possiamo ripristinare D2.
+	MOVE.B	#1,FASE2		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+	JMP		BYTE
+
+
+
+CONTROLLOFINE
+	MOVE.B	#1,FIN2		*indico che la periferia ha terminato di ricevere
+	CMP.B		#1,FIN1		*verifico che anche l'altra ha terminato in modo da poter confrontare i due messaggi
+	BNE		WAIT
+
+*Facciamo il confronto e la copia: dopo aver fatto questo, dobbiamo comunque verificare di aver terminato la fase e dunque verificare che possiamo ripristinare D2 e la FASE
+*prima di tutto confronto le dimensioni
+
+	CMP.B		DIM1,D0
+	BNE		WAIT
+
+	MOVE.L	#APP2,-(A7)	*-4
+	MOVE.L	#APP1,-(A7)	*-4
+	MOVE.L	#MES,-(A7)	*-4
+	MOVE.L	#DIM2,-(A7)	*-4
+	
+	JSR	SOTTOPR_COPIA
+
+	ADDA	#16,A7			*ripristino A7
+
+WAIT
+						*adesso non possiamo fare il confronto, dunque verifichiamo se possiamo ripristinare D2 e usciamo dalla interruzione
+	CMP.B		D0,D1			* Possiamo ripristinare tutto se la dimensione del messaggio e la dimensione vera sono uguali
+	BNE		BYTE
+	MOVE.B	#0,D2	
+	MOVE.B	#1,FASE2		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+
+
+BYTE
+
+	MOVE.B	D2,CNTB2
+	
+	MOVE.L	(A7)+,D3
+	MOVE.L	(A7)+,D2
+	MOVE.L	(A7)+,D1
+	MOVE.L	(A7)+,D0
+	MOVE.L	(A7)+,A1
+	MOVE.L	(A7)+,A0
+
+	
+FINITO	RTE
+
+	
+	END	INIT
+
+

@@ -1,0 +1,42 @@
+**********
+* B invia 8 messaggi di 3 caratteri ciascuno al nodo A
+* A ne prenderà al massimo 5
+
+
+	ORG	$8000
+MES	DC.B	$00,$01,$02,$03,$11,$12,$13,$14,$44,$00,$21,$22,$23,$33,$00,$41,$00,$00,$00,$23,$AA,$11,$11,$11
+DIM	DC.B	8
+
+PIADB	EQU	$2006
+PIACB	EQU	$2007
+
+
+	ORG	$8200
+INIT	JSR	INIZIALIZZA
+
+	*Invio dimensione
+	MOVEA.L	#MES,A0
+	MOVEA.L	#PIADB,A1
+	MOVEA.L	#PIACB,A2
+	MOVE.B	DIM,D0
+	
+INVIO	MOVE.B	(A1),D1		*Lettura fittizia
+	MOVE.B	(A0)+,(A1)	*invio del carattere
+	SUB		#1,D0		
+	
+LOOP	JMP	LOOP
+
+
+INIZIALIZZA	
+	MOVE.B	#0,PIACB
+	MOVE.B	#$FF,PIADB
+	MOVE.B	#%00100101,PIACB
+	RTS
+
+	END	INIT
+
+
+
+
+
+

@@ -1,0 +1,139 @@
+00000000                                     1  *************************************************************************************************
+00000000                                     2  * RICEVITORE, S2 -> lavora con interruzioni
+00000000                                     3  * questo sistema riceve uno stream di caratteri organizzato in pacchetti.
+00000000                                     4  * per poter proseguire con l'acquisizione del successivo pacchetto deve essere 
+00000000                                     5  * verificato il controllo di uguaglianza fra il primo e l'ultimo byte del pacchetto 
+00000000                                     6  * precedentemente acquisito. in caso di errore la periferica deve stoppare 
+00000000                                     7  * l'acquisizione dei pacchetti successivi e fermarsi.
+00000000                                     8  *************************************************************************************************
+00000000                                     9  *	   PIA1		    PIA2
+00000000                                    10  *	S1_TX               S2_RX
+00000000                                    11  *	______	 _______
+00000000                                    12  *	   CA1	|           |   CB2
+00000000                                    13  *	   CA2	|           |   CB1
+00000000                                    14  *	______|           |_______
+00000000                                    15  *	   CB1	|<---------|   CA2
+00000000                                    16  *	   CB2	|--------->|   CA1
+00000000                                    17  *	______| ====>|_______
+00000000                                    18  *
+00000000                                    19  ************************************************************************************************
+00000000                                    20  
+00000000                                    21  
+00000000                                    22  **********AREA DATI**************************************
+00008000                                    23  	ORG	$8000
+00008000                                    24  MSG		DS.B	60	;DIMENSIONE TOTALE MESSAGGIO
+0000803C  00                                25  MC		DC.B	0	;CONTATORE PACCHETTI
+0000803D  00                                26  MP		DC.B	0	;CONTATORE CARATTERI IN UN PACCHETTO
+0000803E  00                                27  COUNT		DC.B	0	;CONTATORE GENERALE DEI CARATTERI RICEVUTI
+0000803F  06                                28  MMC		DC.B	6	;NUMERO PACCHETTI DA RICEVERE
+00008040  0A                                29  MMP		DC.B	10	;NUMERO CARATTERI PER PACCHETTO
+00008041                                    30  
+00008041                                    31  ***********************************************************
+00008041                                    32  
+00008041                                    33  
+00008041                                    34  ***********AREA MAIN*********************************	
+00008200                                    35  	ORG    $8200
+00008200                                    36  
+00008200  =00002004                         37  PIADA	EQU    $2004			;indirizzo di PIA-A dato, usato in input
+00008200  =00002005                         38  PIACA	EQU    $2005			;indirizzo di PIA-A stato/controllo
+00008200                                    39  
+00008200  4EB9 00008214                     40  MAIN	JSR	DVAIN			;inizializza PIA porto A
+00008206                                    41  				
+00008206  40C0                              42  	MOVE.W	SR,D0		;legge il registro di stato
+00008208  0240 D8FF                         43  	ANDI.W	#$D8FF,D0 	;maschera per reg stato (stato utente, int abilitati)
+0000820C  46C0                              44  	MOVE.W	D0,SR		;pone liv int a 000
+0000820E                                    45  
+0000820E  4EF9 0000820E                     46  LOOP  	JMP 		LOOP		;ciclo caldo dove il processore attende interrupt		
+00008214                                    47  
+00008214                                    48  *********************************************************************************************************
+00008214                                    49  
+00008214                                    50  
+00008214                                    51  *********************************************************************************************************
+00008214                                    52  *INIZIALIZZAZIONE DELLA PIA: PORTO A	        	
+00008214                                    53  *   CRA |0 |0 |1 0 0 |1 |0 1|
+00008214                                    54  *
+00008214                                    55  *	DRA=0 => PORTO A PORTO DI INGRESSO
+00008214                                    56  *
+00008214                                    57  ***********************************************************************************************************
+00008214  11FC 0000 2005                    58  DVAIN	MOVE.B	#0,PIACA		;mette 0 nel registro controllo così al prossimo accesso a PIADA (indirizzo pari)
+0000821A                                    59  *						;selezionerà il registro direzione del porto A
+0000821A  11FC 0000 2004                    60  	MOVE.B	#$00,PIADA		;accede a DRA e pone DRA=0 : le linee di A sono linee di input	
+00008220  11FC 0025 2005                    61  	MOVE.B	#%00100101,PIACA  	;imposta il registro di controllo come indicato sopra, ponendo IRQA1=1 e IRQA2=1
+00008226                                    62  *						;i bit CRA7 e CRA6 sono a sola lettura	
+00008226  4E75                              63      RTS
+00008228                                    64  
+00008228                                    65  *******************************************************************************************************
+00008228                                    66  *La pia-A ha ricevuto un carattere dalla pia-B partner, interrompe il processore che
+00008228                                    67  *con la ISR riceve il carattere e lo salva in memoria
+00008228                                    68  *ISR a $8700 associata all' interrupt di liv. 3  #vect 27  mappato a $6C della ROM
+00008228                                    69  ********************************************************************************************************	
+00008228                                    70  	
+00008700                                    71  	ORG $8700		
+00008700                                    72  
+00008700  2F0C                              73  INT3	MOVE.L	A4,-(A7)		    
+00008702  2F0B                              74  	MOVE.L	A3,-(A7)		    
+00008704  2F09                              75  	MOVE.L	A1,-(A7)		;salvataggio registri
+00008706  2F08                              76  	MOVE.L  	A0,-(A7)
+00008708  2F00                              77  	MOVE.L  	D0,-(A7)
+0000870A  2F01                              78  	MOVE.L  	D1,-(A7)
+0000870C  2F02                              79  	MOVE.L  	D2,-(A7)
+0000870E                                    80  
+0000870E  227C 00002004                     81  	MOVEA.L	#PIADA,A1	;indirizzo del dato ricevuto
+00008714  207C 00008000                     82  	MOVEA.L	#MSG,A0	;indirizzo area di salvataggio del messaggio da ricevere
+0000871A  1039 0000803E                     83  	MOVE.B	COUNT,D0	;contatore corrente degli elementi ricevuti
+00008720  1239 0000803D                     84  	MOVE.B	MP,D1		;contatore caratteri ricevuti del pacchtto corrente
+00008726  1439 0000803C                     85  	MOVE.B	MC,D2		;contatore pacchetti ricevuti
+0000872C                                    86  
+0000872C                                    87  	
+0000872C  1191 0000                         88  	MOVE.B 	(A1),(A0,D0)		;la lettura da PRA fa abbassare CRA7 e CA2 => nell'altro sistema si abbassa CB1
+00008730                                    89  *						;ciò corrisponde all'attivazione di CRB7 che funge da DATA ACKNOWLEDGE
+00008730                                    90  	
+00008730  5200                              91  	ADD.B		#1,D0			;aggiunge uno al contatore dei caratteri ricevuti
+00008732  13C0 0000803E                     92  	MOVE.B	D0,COUNT
+00008738                                    93  
+00008738  5241                              94  	ADDQ		#1,D1			;aggiunge uno al contatore dei caratteri del pacchetto corrente
+0000873A  13C1 0000803D                     95  	MOVE.B	D1,MP			
+00008740  B239 00008040                     96  	CMP.B		MMP,D1		;se non è l'ultimo carattere del pacchetto 
+00008746  6600 0046                         97  	BNE		USCITA		;salta ad uscita
+0000874A                                    98  *						;se è proprio l'ultimo carattere del pacchetto prosegui col confronto
+0000874A  D7C8                              99  	ADDA.L	A0,A3			;calcolo l'indirizzo dell'ultimo byte aggiungendo all'indirizzo del primo elemento del messaggio ricevuto
+0000874C  D7C0                             100  	ADDA.L	D0,A3			;il valore del contatore generale dei caratteri (perchè l'ultimo byte del pacchetto è proprio l'ultimo byte ricevuto)
+0000874E  D7FC FFFFFFFF                    101  	ADDA.L	#-1,A3			;correggo il valore sottraendo 1, perchè l'incremento del contatore è precedente al confronto
+00008754                                   102  
+00008754  284B                             103  	MOVE.L	A3,A4			;calcolo l'indirizzo del primo byte del pacchetto sottraendo all'indirizzo dell'ultimo byte
+00008756  D9FC FFFFFFF7                    104  	ADDA.L	#-9,A4			;la dimensione del pacchetto -1, per puntare proprio al primo elemento del pacchetto corrente
+0000875C                                   105  	
+0000875C  1A13                             106  	MOVE.B	(A3),D5			;sposto i due byte da confrontare in due registri dati
+0000875E  1C14                             107  	MOVE.B	(A4),D6	
+00008760  BC45                             108  	CMP		D5,D6
+00008762  6600 0024                        109  	BNE		DISAB			;se i due caratteri non sono uguali salta a disabilita
+00008766                                   110  *						;se sono uguali
+00008766  5242                             111  	ADDQ		#1,D2			;aggiungi 1 al contatore dei pacchetti ricevuti
+00008768  13C2 0000803C                    112  	MOVE.B	D2,MC
+0000876E  B439 0000803F                    113  	CMP.B		MMC,D2		;verifica se quello ricevuto è l'ultimo pacchetto del messaggio
+00008774  6700 0012                        114  	BEQ		DISAB			;se è l'ultimo pacchetto salta a disabilita 
+00008778                                   115  *						;se non è l'ultimo pacchetto del messaggio
+00008778  123C 0000                        116  	MOVE.B	#0,D1			;resetta il contatore dei caratteri ricevuti per il pacchetto corrente
+0000877C  13C1 0000803D                    117  	MOVE.B	D1,MP			
+00008782  4EF9 0000878E                    118  	JMP		USCITA		;salta a uscita
+00008788                                   119  
+00008788  11FC 0000 2005                   120  DISAB	MOVE.B	#$00,PIACA		;disabilito la periferica, ponendo a 0 i bit del registro di controllo
+0000878E                                   121  *				;in questo modo dovrebbe lavorare in polling non ricevendo più caratteri e fermandosi sul ciclo loop jmp loop (che non può più essere stoppato da interruzioni)	
+0000878E                                   122  
+0000878E                                   123  
+0000878E  241F                             124  USCITA	MOVE.L  	(A7)+,D2
+00008790  221F                             125  		MOVE.L  	(A7)+,D1
+00008792  201F                             126  		MOVE.L  	(A7)+,D0		;ripristino registri 
+00008794  205F                             127  		MOVE.L  	(A7)+,A0
+00008796  225F                             128  		MOVE.L	(A7)+,A1	
+00008798  265F                             129  		MOVE.L	(A7)+,A3
+0000879A  285F                             130  		MOVE.L	(A7)+,A4
+0000879C  4245                             131  		CLR		D5
+0000879E  4246                             132  		CLR		D6
+000087A0                                   133  
+000087A0  4E73                             134  	RTE
+000087A2                                   135  
+000087A2                                   136  	END	MAIN
+
+No errors detected
+No warnings generated

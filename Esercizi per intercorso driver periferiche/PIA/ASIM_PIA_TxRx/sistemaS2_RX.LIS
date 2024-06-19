@@ -1,0 +1,112 @@
+00000000                                     1  *************************************************************************************************
+00000000                                     2  *Il programma serve a provare una semplice configurazione costituita da due 
+00000000                                     3  *sistemi S1 ed S2 dotati entrambi di un processore M68000, una ROM di 8K (addr $0-$1FFF), 
+00000000                                     4  *una RAM di 10K (addr $8000-$A7FF) e un device parallelo PIA mappato a $2004.
+00000000                                     5  *I due PIA sono interconnessi tra loro e mediante un protocollo di handshaking consentono ai
+00000000                                     6  *due sistemi di scambiarsi un messaggio. In particolare, il sistema S1 trasferisce un vettore di N caratteri
+00000000                                     7  *verso il sistema S2 sul porto parallelo. Il messaggio si trova in un'area di memoria del sistema S1
+00000000                                     8  *e viene salvato in una ulteriore area di memoria nel sistema S2.
+00000000                                     9  *
+00000000                                    10  *Questo driver serve per la programmazione del sistema S2, che riceve il messaggio sulla PIA
+00000000                                    11  *utilizzando le interruzioni.
+00000000                                    12  *
+00000000                                    13  *La ricezione di un carattere sulla PIA e' gestita mediante interruzione di livello 3 (la PIA non supporta le int.vettorizzate in ASIM)
+00000000                                    14  *che corrisponde al vettore 27 mappato in area ROM alla locazione $6C: in tale locazione
+00000000                                    15  *è contenuto l'indirizzo della ISR in RAM ($8700). 
+00000000                                    16  *All'arrivo dell'interrupt la ISR acquisisce il carattere e lo salva in un'opportuna posizione in memoria.
+00000000                                    17  *************************************************************************************************
+00000000                                    18  *	   PIA1		    PIA2
+00000000                                    19  *	______	 _______
+00000000                                    20  *	   CA1	|<---------|   CB2
+00000000                                    21  *	   CA2	|--------->|   CB1
+00000000                                    22  *	______|<==== |_______
+00000000                                    23  *	   CB1	|<---------|   CA2
+00000000                                    24  *	   CB2	|--------->|   CA1
+00000000                                    25  *	______| ====>|_______
+00000000                                    26  *
+00000000                                    27  ************************************************************************************************
+00000000                                    28  
+00000000                                    29  
+00000000                                    30  	
+00000000                                    31  
+00000000                                    32  ************************************************************
+00000000                                    33  **********AREA DATI**************************************
+00008000                                    34  	ORG	$8000
+00008000                                    35  MSG	DS.B	6
+00008006  06                                36  DIM	DC.B	6
+00008007  00                                37  COUNT		DC.B	0
+00008008                                    38  
+00008008                                    39  
+00008008                                    40  ***********************************************************
+00008008                                    41  ***********AREA MAIN*********************************	
+00008200                                    42  	ORG    $8200
+00008200                                    43  
+00008200  =00002004                         44  PIADA	EQU    $2004	;indirizzo di PIA-A dato, usato in input
+00008200  =00002005                         45  PIACA	EQU    $2005	;indirizzo di PIA-A stato/controllo
+00008200                                    46  
+00008200  4EB9 00008214                     47  MAIN	JSR	DVAIN	;inizializza PIA porto A
+00008206                                    48  				
+00008206  40C0                              49  	MOVE.W	SR,D0	;legge il registro di stato
+00008208  0240 D8FF                         50  	ANDI.W	#$D8FF,D0 ;maschera per reg stato (stato utente, int abilitati)
+0000820C  46C0                              51  	MOVE.W	D0,SR	;pone liv int a 000
+0000820E                                    52  
+0000820E  4EF9 0000820E                     53  LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+00008214                                    54  	
+00008214                                    55  
+00008214                                    56  *********************************************************************************************************
+00008214                                    57  *********************************************************************************************************
+00008214                                    58  *INIZIALIZZAZIONE DELLA PIA: PORTO A	        	
+00008214                                    59  *   CRA |0 |0 |1 0 0 |1 |0 1|
+00008214                                    60  *	           |	  |   |____Controllo CA1: interruzioni abilitate su IRQA, CA1 sensibile a fronte 1->0
+00008214                                    61  *			   |	  |	
+00008214                                    62  *		       |	  |________Accesso a DRA: il prossimo accesso ad indirizzo pari è per PRA
+00008214                                    63  *		       |_______________Controllo CA2: 1=>linea di uscita, con gli altri due bit a 00 diventa alto sul fronte
+00008214                                    64  *												attivo di CA1 e si riabbassa a seguito di una lettura su PRA
+00008214                                    65  *											  0=>linea di ingresso, si comporta come CA1 (CRA3 come CRA0,
+00008214                                    66  *											    CRA4 come CRA1, IRQA2 come IRQA1)
+00008214                                    67  *
+00008214                                    68  *	DRA=0 => PORTO A PORTO DI INGRESSO
+00008214                                    69  *
+00008214                                    70  ***********************************************************************************************************
+00008214  11FC 0000 2005                    71  DVAIN	MOVE.B	#0,PIACA		;mette 0 nel registro controllo così al prossimo accesso a PIADA (indirizzo pari)
+0000821A                                    72  *								;selezionerà il registro direzione del porto A
+0000821A  11FC 0000 2004                    73  	MOVE.B	#$00,PIADA		    ;accede a DRA e pone DRA=0 : le linee di A sono linee di input	
+00008220  11FC 0025 2005                    74  	MOVE.B	#%00100101,PIACA  	;imposta il registro di controllo come indicato sopra, ponendo IRQA1=1 e IRQA2=1
+00008226                                    75  *								;i bit CRA7 e CRA6 sono a sola lettura	
+00008226  4E75                              76      RTS
+00008228                                    77  
+00008228                                    78  *******************************************************************************************************
+00008228                                    79  *La pia-A ha ricevuto un carattere dalla pia-B partner, interrompe il processore che
+00008228                                    80  *con la ISR riceve il carattere e lo salva in memoria
+00008228                                    81  *ISR a $8700 associata all' interrupt di liv. 3  #vect 27  mappato a $6C della ROM
+00008228                                    82  ********************************************************************************************************	
+00008228                                    83  	
+00008700                                    84  	ORG $8700		
+00008700                                    85  
+00008700  2F09                              86  INT3    	MOVE.L  A1,-(A7)		;salvataggio registri
+00008702  2F08                              87  	MOVE.L  A0,-(A7)
+00008704  2F00                              88  	MOVE.L  D0,-(A7)
+00008706                                    89  
+00008706  227C 00002004                     90  	MOVEA.L	#PIADA,A1
+0000870C  207C 00008000                     91  	MOVEA.L	#MSG,A0	;indirizzo area di salvataggio
+00008712  1039 00008007                     92  	MOVE.B	COUNT,D0	;contatore corrente degli elementi ricevuti
+00008718                                    93  
+00008718                                    94  	
+00008718  1191 0000                         95  	MOVE.B 	(A1),(A0,D0)	;acquisisce il carattere e lo trasferisce a Terminal
+0000871C                                    96  *						;la lettura da PRA fa abbassare CRA7 e CA2 => nell'altro sistema si abbassa CB1
+0000871C                                    97  *						;ciò corrisponde all'attivazione di CRB7 che funge da DATA ACKNOWLEDGE
+0000871C                                    98  	
+0000871C  5200                              99  	ADD.B	#1,D0
+0000871E  13C0 00008007                    100  	MOVE.B	D0,COUNT
+00008724                                   101  
+00008724  201F                             102  	MOVE.L  (A7)+,D0		;ripristino registri 
+00008726  205F                             103  	MOVE.L  (A7)+,A0
+00008728  225F                             104  	MOVE.L  (A7)+,A1
+0000872A                                   105  	
+0000872A  4E73                             106  	RTE
+0000872C                                   107  
+0000872C                                   108  
+0000872C                                   109  	END	MAIN
+
+No errors detected
+No warnings generated

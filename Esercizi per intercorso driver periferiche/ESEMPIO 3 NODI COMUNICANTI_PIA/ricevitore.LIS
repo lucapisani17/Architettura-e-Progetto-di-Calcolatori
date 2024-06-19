@@ -1,0 +1,396 @@
+00000000                                     1  **********************************
+00000000                                     2  *	Il ricevitore, riceve due messaggi da due sistemi e poi decide di copiare il messaggio in una specifica area di memoria
+00000000                                     3  *	solo se i messaggi sono uguali. Tale ricevitore, dunque presenta due dispositivi PIA, che si comportano da ricevitori.
+00000000                                     4  *	una PIA genera una interruzione di livello 3, mentre l'altra di livello 4
+00000000                                     5  
+00000000                                     6  ***********************************
+00000000                                     7  
+00000000                                     8  
+00008000                                     9  	ORG	$8000
+00008000                                    10  APP1	DS.B	16		*Appoggio per il messaggio ricevuto dal primo tx
+00008010                                    11  APP2	DS.B	16		*appoggio per il messaggio ricevuto dal secondo tx
+00008020                                    12  MES	DS.B	16
+00008030  01                                13  SIZE	DC.B	1
+00008031                                    14  DIM1	DS.B	1	*dimensione del messaggio in byte: il trasmettitore invia una dimensione che non dipende dai byte
+00008032                                    15  DIM2	DS.B	1	*dimensione in byte.
+00008033  10                                16  DMAX	DC.B	16	*dimensione massima in byte
+00008034                                    17  RDIM1	DS.B	1	*conserviamo la reale dimensione del messaggio: può accadere che la dimensione ricevuta è maggiore della dimensione massima
+00008035                                    18  RDIM2	DS.B	1	
+00008036  00                                19  CNTB1	DC.B	0	*numero di byte ricevuti
+00008037  00                                20  CNTB2	DC.B	0
+00008038  00                                21  FIN1	DC.B	0	*verifica che il primo messaggio è stato completato
+00008039  00                                22  FIN2	DC.B	0	*verifica che il secondo messaggio è stato completato 
+0000803A  01                                23  FASE1	DC.B	1
+0000803B  01                                24  FASE2	DC.B	1
+0000803C                                    25  
+0000803C  =00002004                         26  PIADA	EQU    $2004	
+0000803C  =00002005                         27  PIACA	EQU    $2005	
+0000803C  =00002008                         28  PIADA2	EQU	$2008
+0000803C  =00002009                         29  PIACA2	EQU	$2009
+0000803C                                    30  
+0000803C                                    31  
+00008200                                    32  	ORG	$8200
+00008200                                    33  
+00008200  4EB9 00008214                     34  INIT	JSR	INIZIALIZZA
+00008206                                    35  
+00008206  40C1                              36  	MOVE.W	SR,D1
+00008208  0241 D8FF                         37  	ANDI.W	#$D8FF,D1
+0000820C  46C1                              38  	MOVE.W	D1,SR
+0000820E                                    39  
+0000820E                                    40  
+0000820E  4EF9 0000820E                     41  LOOP	JMP	LOOP
+00008214                                    42  
+00008214                                    43  
+00008214                                    44  
+00008214                                    45  INIZIALIZZA
+00008214  11FC 0000 2005                    46  	MOVE.B	#0,PIACA
+0000821A  11FC 0000 2004                    47  	MOVE.B	#0,PIADA
+00008220  11FC 0025 2005                    48  	MOVE.B	#%00100101,PIACA
+00008226  11FC 0000 2009                    49  	MOVE.B	#0,PIACA2
+0000822C  11FC 0000 2008                    50  	MOVE.B	#0,PIADA2
+00008232  11FC 0025 2009                    51  	MOVE.B	#%00100101,PIACA2
+00008238  4E75                              52  	RTS
+0000823A                                    53  
+0000823A                                    54  
+0000823A                                    55  
+0000823A                                    56  
+0000823A                                    57  
+0000823A                                    58  
+0000823A                                    59  ***********************************************SOTTOPROGRAMMI*************************************
+0000823A                                    60  *		STACK
+0000823A                                    61  *		D2	(4 BYTE)
+0000823A                                    62  *		D1	(4 BYTE)
+0000823A                                    63  *		D0	(4 BYTE)
+0000823A                                    64  *		A2	(4 BYTE)
+0000823A                                    65  *		A1	(4 BYTE)
+0000823A                                    66  *		A0	(4 BYTE)
+0000823A                                    67  *		A6	(4 BYTE)   <---A6
+0000823A                                    68  *		IND. RITORNO(4 BYTE)
+0000823A                                    69  *		DMAX	(1 BYTE)
+0000823A                                    70  *		SIZE	(1 BYTE)
+0000823A                                    71  *		RDIM	(4 BYTE)
+0000823A                                    72  *		DIM	(4 BYTE) indirizzo della dimensione
+0000823A                                    73  *		PIADA  (4 BYTE)
+0000823A                                    74  
+0000823A                                    75  PRENDIDIMENSIONE				*--> serve per prendere la dimensione del messaggio
+0000823A  4E56 FFE8                         76  	LINK	A6,#-24
+0000823E  2D48 FFFC                         77  	MOVE.L	A0,-4(A6)
+00008242  2D49 FFF8                         78  	MOVE.L	A1,-8(A6)
+00008246  2D4A FFF4                         79  	MOVE.L	A2,-12(A6)
+0000824A  2D40 FFF0                         80  	MOVE.L	D0,-16(A6)
+0000824E  2D41 FFEC                         81  	MOVE.L	D1,-20(A6)
+00008252  2D42 FFE8                         82  	MOVE.L	D2,-24(A6)
+00008256                                    83  		
+00008256  122E 0008                         84  	MOVE.B	8(A6),D1	*Dmax
+0000825A  102E 0009                         85  	MOVE.B	9(A6),D0	*size
+0000825E  246E 000A                         86  	MOVE.L	10(A6),A2	*RDIM
+00008262  226E 000E                         87  	MOVE.L	14(A6),A1	*DIM1
+00008266  206E 0012                         88  	MOVE.L	18(A6),A0
+0000826A                                    89  
+0000826A  1410                              90  	MOVE.B	(A0),D2			*lettura
+0000826C  C4C0                              91  	MULU		D0,D2			*dim*size= dimensione in byte
+0000826E  1482                              92  	MOVE.B	D2,(A2)			*Mettiamo la dimensione reale del messaggio
+00008270  B401                              93  	CMP.B		D1,D2		
+00008272  6E00 000A                         94  	BGT		TRONCA		*Se la dimensione ricevuta è maggiore a quella massima
+00008276  1282                              95  	MOVE.B	D2,(A1)			*se rispettiamo la dimensione possiamo mettere D2 come la dimensione del messaggio
+00008278  4EF9 00008280                     96  	JMP		RITORNO
+0000827E                                    97  TRONCA
+0000827E  1281                              98  	MOVE.B	D1,(A1)
+00008280                                    99  
+00008280                                   100  RITORNO
+00008280  206E FFFC                        101  	MOVE.L	-4(A6),A0
+00008284  226E FFF8                        102  	MOVE.L	-8(A6),A1
+00008288  246E FFF4                        103  	MOVE.L	-12(A6),A2
+0000828C  202E FFF0                        104  	MOVE.L	-16(A6),D0
+00008290  222E FFEC                        105  	MOVE.L	-20(A6),D1
+00008294  242E FFE8                        106  	MOVE.L	-24(A6),D2
+00008298  4E5E                             107  	UNLK		A6
+0000829A                                   108  
+0000829A                                   109  
+0000829A  4E75                             110  	RTS
+0000829C                                   111  
+0000829C                                   112  
+0000829C                                   113  *		STACK
+0000829C                                   114  *		D2	(4 BYTE)
+0000829C                                   115  *		D1	(4 BYTE)
+0000829C                                   116  *		D0	(4 BYTE)
+0000829C                                   117  *		A2	(4 BYTE)
+0000829C                                   118  *		A1	(4 BYTE)
+0000829C                                   119  *		A6	(4 BYTE)   <---A6
+0000829C                                   120  *		IND. RITORNO(4 BYTE)
+0000829C                                   121  *		DIM	(4 BYTE)	indirizzo della dimenzione
+0000829C                                   122  *		MES	(4 BYTE)	indirizzo della locazione di memoria dove copiare il messaggio
+0000829C                                   123  *		APP2	(4 BYTE)
+0000829C                                   124  *		APP1	(4 BYTE)  	Indirizzi dove sono i messaggi ricevuti
+0000829C                                   125  
+0000829C                                   126  
+0000829C                                   127  SOTTOPR_COPIA
+0000829C  4E56 FFEC                        128  	LINK	A6,#-20
+000082A0  2D49 FFFC                        129  	MOVE.L	A1,-4(A6)
+000082A4  2D4A FFF8                        130  	MOVE.L	A2,-8(A6)
+000082A8  2D40 FFF4                        131  	MOVE.L	D0,-12(A6)
+000082AC  2D41 FFF0                        132  	MOVE.L	D1,-16(A6)
+000082B0  2D42 FFEC                        133  	MOVE.L	D2,-20(A6)
+000082B4                                   134  
+000082B4  4240                             135  	CLR	D0
+000082B6  4241                             136  	CLR	D1
+000082B8  4242                             137  	CLR	D2
+000082BA                                   138  	
+000082BA  226E 0008                        139  	MOVE.L	8(A6),A1	*Dimensione del messaggio da confrontare/copiare
+000082BE  1411                             140  	MOVE.B	(A1),D2
+000082C0  226E 0014                        141  	MOVE.L	20(A6),A1
+000082C4  246E 0010                        142  	MOVE.L	16(A6),A2
+000082C8                                   143  	
+000082C8                                   144  CONF
+000082C8  1011                             145  	MOVE.B	(A1),D0
+000082CA  B012                             146  	CMP.B		(A2),D0
+000082CC  6600 0028                        147  	BNE		STOP			*dobbiamo uscire
+000082D0  D2FC 0001                        148  	ADDA		#1,A1
+000082D4  D4FC 0001                        149  	ADDA		#1,A2
+000082D8  5201                             150  	ADD.B		#1,D1
+000082DA  B401                             151  	CMP.B		D1,D2
+000082DC  66EA                             152  	BNE		CONF
+000082DE                                   153  
+000082DE  4241                             154  	CLR	D1
+000082E0                                   155  
+000082E0  92C2                             156  	SUBA	D2,A1
+000082E2  246E 000C                        157  	MOVE.L	12(A6),A2		*locazione dove memorizzare il messaggio
+000082E6                                   158  COPIA
+000082E6  1491                             159  	MOVE.B	(A1),(A2)	
+000082E8  D2FC 0001                        160  	ADDA		#1,A1
+000082EC  D4FC 0001                        161  	ADDA		#1,A2
+000082F0  5201                             162  	ADD.B		#1,D1
+000082F2  B401                             163  	CMP.B		D1,D2
+000082F4  66F0                             164  	BNE		COPIA
+000082F6                                   165  
+000082F6                                   166  STOP	
+000082F6  226E FFFC                        167  	MOVE.L	-4(A6),A1
+000082FA  246E FFF8                        168  	MOVE.L	-8(A6),A2
+000082FE  202E FFF4                        169  	MOVE.L	-12(A6),D0
+00008302  222E FFF0                        170  	MOVE.L	-16(A6),D1
+00008306  242E FFEC                        171  	MOVE.L	-20(A6),D2
+0000830A  4E5E                             172  	UNLK		A6
+0000830C  4E75                             173  	RTS
+0000830E                                   174  
+0000830E                                   175  
+0000830E                                   176  
+0000830E                                   177  *******Interrupt livello 3-->PIA1
+00008700                                   178  	ORG	$8700
+00008700                                   179  *Alza maschera interruzioni altrimenti interruzione 4  interrompe sempre. 
+00008700                                   180  
+00008700  007C 0700                        181  	ORI.W	#$0700,SR			
+00008704                                   182  
+00008704  0C39 0001 0000803A               183  INT3	CMP.B		#1,FASE1
+0000870C  6600 0032                        184  	BNE	MESSAGGIO
+00008710                                   185  	
+00008710  2F3C 00002004                    186  	MOVE.L	#PIADA,-(A7)
+00008716  2F3C 00008031                    187  	MOVE.L	#DIM1,-(A7)
+0000871C  2F3C 00008034                    188  	MOVE.L	#RDIM1,-(A7)
+00008722  1F39 00008030                    189  	MOVE.B	SIZE,-(A7)
+00008728  1F39 00008033                    190  	MOVE.B	DMAX,-(A7)
+0000872E                                   191  	
+0000872E  4EB9 0000823A                    192  	JSR	PRENDIDIMENSIONE
+00008734                                   193  
+00008734  DEFC 000E                        194  	ADDA	#14,A7
+00008738                                   195  
+00008738  5239 0000803A                    196  	ADD.B	#1,FASE1
+0000873E                                   197  
+0000873E  4E73                             198  	RTE
+00008740                                   199  
+00008740                                   200  MESSAGGIO	
+00008740  0C39 0002 0000803A               201  	CMP.B		#2,FASE1
+00008748  6600 00CA                        202  	BNE		ESCI
+0000874C                                   203  	
+0000874C  2F08                             204  	MOVE.L	A0,-(A7)
+0000874E  2F09                             205  	MOVE.L	A1,-(A7)
+00008750  2F00                             206  	MOVE.L	D0,-(A7)	*per dimensione
+00008752  2F01                             207  	MOVE.L	D1,-(A7)	* per dimensione vera del messaggio
+00008754  2F02                             208  	MOVE.L	D2,-(A7)	*per CNTB
+00008756  2F03                             209  	MOVE.L	D3,-(A7)	*per appoggio
+00008758                                   210  	
+00008758                                   211  
+00008758  207C 00002004                    212  	MOVEA.L	#PIADA,A0
+0000875E  227C 00008000                    213  	MOVEA.L	#APP1,A1
+00008764  1039 00008031                    214  	MOVE.B	DIM1,D0
+0000876A  1239 00008034                    215  	MOVE.B	RDIM1,D1
+00008770  1439 00008036                    216  	MOVE.B	CNTB1,D2
+00008776                                   217  
+00008776  B400                             218  	CMP.B		D0,D2		*confronto il numero di byte ricevuti e il numero totale da memorizzare
+00008778  6700 001A                        219  	BEQ		NOMEM		*se il numero di byte ricevuti è maggiore o uguale al numero totale di byte da memorizzare, stiamo ricevendo
+0000877C  B400                             220  	CMP.B		D0,D2		*una parte del messaggio che non dobbiamo considerare. Il ricevitore deve infatti memorizzare nelle locazioni
+0000877E  6E00 0014                        221  	BGT		NOMEM	* di appoggio un numero di byte pari a DIM1
+00008782  D2C2                             222  	ADDA		D2,A1
+00008784  1290                             223  	MOVE.B	(A0),(A1)
+00008786  5202                             224  	ADD.B		#1,D2
+00008788  B002                             225  	CMP.B		D2,D0
+0000878A  6700 0024                        226  	BEQ		VERIFICA
+0000878E  4EF9 00008802                    227  	JMP		PRBYTE
+00008794                                   228  
+00008794                                   229  NOMEM
+00008794                                   230  	*in questa parte non dobbiamo memorizzare il byte ricevuto, facciamo solo una lettura in modo da non bloccare il trasmettitore
+00008794  1610                             231  	MOVE.B	(A0),D3
+00008796  5202                             232  	ADD.B		#1,D2		*Continuo ad incrementare D2
+00008798  B202                             233  	CMP.B		D2,D1		*confronto con dimensione vera totale
+0000879A  6600 0066                        234  	BNE		PRBYTE
+0000879E  143C 0000                        235  	MOVE.B	#0,D2		*dopo aver ricevuto tutti possiamo ripristinare D2.
+000087A2  13FC 0001 0000803A               236  	MOVE.B	#1,FASE1		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+000087AA  4EF9 00008802                    237  	JMP		PRBYTE
+000087B0                                   238  
+000087B0                                   239  
+000087B0                                   240  *Il confronto e la copia sono effettuati solo se sono completati tutti e due i messaggi
+000087B0                                   241  VERIFICA
+000087B0  13FC 0001 00008038               242  	MOVE.B	#1,FIN1		*indico che la periferica ha terminato di ricevere
+000087B8  0C39 0001 00008039               243  	CMP.B		#1,FIN2		*verifico che anche l'altra ha terminato in modo da poter confrontare i due messaggi
+000087C0  6600 002E                        244  	BNE		PIA2WAIT
+000087C4                                   245  
+000087C4                                   246  *Facciamo il confronto e la copia: dopo aver fatto questo, dobbiamo comunque verificare di aver terminato la fase e dunque verificare che possiamo ripristinare D2 e la FASE
+000087C4                                   247  
+000087C4  B039 00008032                    248  	CMP.B		DIM2,D0
+000087CA  6600 0024                        249  	BNE		PIA2WAIT
+000087CE                                   250  
+000087CE                                   251  *Faccio il confronto e la copia
+000087CE  2F3C 00008000                    252  	MOVE.L	#APP1,-(A7)	*-4
+000087D4  2F3C 00008010                    253  	MOVE.L	#APP2,-(A7)	*-4
+000087DA  2F3C 00008020                    254  	MOVE.L	#MES,-(A7)	*-4
+000087E0  2F3C 00008031                    255  	MOVE.L	#DIM1,-(A7)	*-4
+000087E6                                   256  	
+000087E6  4EB9 0000829C                    257  	JSR	SOTTOPR_COPIA
+000087EC                                   258  
+000087EC  DEFC 0010                        259  	ADDA	#16,A7			*ripristino A7
+000087F0                                   260  
+000087F0                                   261  
+000087F0                                   262  PIA2WAIT
+000087F0                                   263  						*verifichiamo se possiamo ripristinare D2 e usciamo dalla interruzione
+000087F0  B200                             264  	CMP.B		D0,D1			* Possiamo ripristinare tutto se la dimensione dei byte ricevuti e la dimensione vera del messaggio (RDIM) sono uguali
+000087F2  6600 000E                        265  	BNE		PRBYTE
+000087F6  143C 0000                        266  	MOVE.B	#0,D2	
+000087FA  13FC 0001 0000803A               267  	MOVE.B	#1,FASE1		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+00008802                                   268  
+00008802                                   269  
+00008802                                   270  PRBYTE
+00008802                                   271  	
+00008802  13C2 00008036                    272  	MOVE.B	D2,CNTB1
+00008808                                   273  
+00008808  261F                             274  	MOVE.L	(A7)+,D3
+0000880A  241F                             275  	MOVE.L	(A7)+,D2
+0000880C  221F                             276  	MOVE.L	(A7)+,D1
+0000880E  201F                             277  	MOVE.L	(A7)+,D0
+00008810  225F                             278  	MOVE.L	(A7)+,A1
+00008812  205F                             279  	MOVE.L	(A7)+,A0
+00008814                                   280  
+00008814  4E73                             281  ESCI	RTE
+00008816                                   282  
+00008816                                   283  
+00008816                                   284  *******Interrupt livello 4-->PIA2
+00008816                                   285  
+00008816                                   286  
+00008900                                   287  	ORG	$8900
+00008900  0C39 0001 0000803B               288  INT4	CMP.B		#1,FASE2
+00008908  6600 0032                        289  	BNE		M2MESS
+0000890C                                   290  	
+0000890C  2F3C 00002008                    291  	MOVE.L	#PIADA2,-(A7) 			*-4
+00008912  2F3C 00008032                    292  	MOVE.L	#DIM2,-(A7)			*-4
+00008918  2F3C 00008035                    293  	MOVE.L	#RDIM2,-(A7)			*-4
+0000891E  1F39 00008030                    294  	MOVE.B	SIZE,-(A7)			*-1
+00008924  1F39 00008033                    295  	MOVE.B	DMAX,-(A7)			*-1 tot=14
+0000892A                                   296  	
+0000892A  4EB9 0000823A                    297  	JSR	PRENDIDIMENSIONE
+00008930                                   298  
+00008930  DEFC 000E                        299  	ADDA	#14,A7
+00008934                                   300  
+00008934                                   301  
+00008934  5239 0000803B                    302  	ADD.B	#1,FASE2
+0000893A                                   303  		
+0000893A  4E73                             304  	RTE
+0000893C                                   305  M2MESS
+0000893C  0C39 0002 0000803B               306  	CMP.B		#2,FASE2
+00008944  6600 00D0                        307  	BNE		FINITO
+00008948                                   308  	
+00008948  2F08                             309  	MOVE.L	A0,-(A7)
+0000894A  2F09                             310  	MOVE.L	A1,-(A7)
+0000894C  2F00                             311  	MOVE.L	D0,-(A7)	*per dimensione
+0000894E  2F01                             312  	MOVE.L	D1,-(A7)	* per dimensione vera del messaggio
+00008950  2F02                             313  	MOVE.L	D2,-(A7)	*per CNTB
+00008952  2F03                             314  	MOVE.L	D3,-(A7)	*per appoggio
+00008954  4240                             315  	CLR	D0
+00008956  4241                             316  	CLR	D1
+00008958  4242                             317  	CLR	D2
+0000895A                                   318  
+0000895A                                   319  	
+0000895A  207C 00002008                    320  	MOVEA.L	#PIADA2,A0
+00008960  227C 00008010                    321  	MOVEA.L	#APP2,A1
+00008966                                   322  
+00008966  1039 00008032                    323  	MOVE.B	DIM2,D0
+0000896C  1239 00008035                    324  	MOVE.B	RDIM2,D1
+00008972  1439 00008037                    325  	MOVE.B	CNTB2,D2
+00008978                                   326  
+00008978  B400                             327  	CMP.B		D0,D2		*confronto il numero di byte ricevuti e il numero totale da memorizzare
+0000897A  6700 001A                        328  	BEQ		SALTAR		*se il numero di byte ricevuti è maggiore o uguale al numero totale di byte da memorizzare, stiamo ricevendo
+0000897E  B400                             329  	CMP.B		D0,D2		*una parte del messaggio che non dobbiamo considerare
+00008980  6E00 0014                        330  	BGT		SALTAR	
+00008984  D2C2                             331  	ADDA		D2,A1
+00008986  1290                             332  	MOVE.B	(A0),(A1)
+00008988  5202                             333  	ADD.B		#1,D2
+0000898A  B002                             334  	CMP.B		D2,D0
+0000898C  6700 0024                        335  	BEQ		CONTROLLOFINE
+00008990  4EF9 00008A04                    336  	JMP		BYTE
+00008996                                   337  
+00008996                                   338  SALTAR
+00008996                                   339  	*in questa parte non dobbiamo memorizzare il byte ricevuto, facciamo solo una lettura in modo da non bloccare il trasmettitore
+00008996  1610                             340  	MOVE.B	(A0),D3
+00008998  5202                             341  	ADD.B		#1,D2		*Continuo ad incrementare D2
+0000899A  B202                             342  	CMP.B		D2,D1		*confronto con dimensione vera totale
+0000899C  6600 0066                        343  	BNE		BYTE
+000089A0  143C 0000                        344  	MOVE.B	#0,D2		*dopo aver ricevuto tutti possiamo ripristinare D2.
+000089A4  13FC 0001 0000803B               345  	MOVE.B	#1,FASE2		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+000089AC  4EF9 00008A04                    346  	JMP		BYTE
+000089B2                                   347  
+000089B2                                   348  
+000089B2                                   349  
+000089B2                                   350  CONTROLLOFINE
+000089B2  13FC 0001 00008039               351  	MOVE.B	#1,FIN2		*indico che la periferia ha terminato di ricevere
+000089BA  0C39 0001 00008038               352  	CMP.B		#1,FIN1		*verifico che anche l'altra ha terminato in modo da poter confrontare i due messaggi
+000089C2  6600 002E                        353  	BNE		WAIT
+000089C6                                   354  
+000089C6                                   355  *Facciamo il confronto e la copia: dopo aver fatto questo, dobbiamo comunque verificare di aver terminato la fase e dunque verificare che possiamo ripristinare D2 e la FASE
+000089C6                                   356  *prima di tutto confronto le dimensioni
+000089C6                                   357  
+000089C6  B039 00008031                    358  	CMP.B		DIM1,D0
+000089CC  6600 0024                        359  	BNE		WAIT
+000089D0                                   360  
+000089D0  2F3C 00008010                    361  	MOVE.L	#APP2,-(A7)	*-4
+000089D6  2F3C 00008000                    362  	MOVE.L	#APP1,-(A7)	*-4
+000089DC  2F3C 00008020                    363  	MOVE.L	#MES,-(A7)	*-4
+000089E2  2F3C 00008032                    364  	MOVE.L	#DIM2,-(A7)	*-4
+000089E8                                   365  	
+000089E8  4EB9 0000829C                    366  	JSR	SOTTOPR_COPIA
+000089EE                                   367  
+000089EE  DEFC 0010                        368  	ADDA	#16,A7			*ripristino A7
+000089F2                                   369  
+000089F2                                   370  WAIT
+000089F2                                   371  						*adesso non possiamo fare il confronto, dunque verifichiamo se possiamo ripristinare D2 e usciamo dalla interruzione
+000089F2  B200                             372  	CMP.B		D0,D1			* Possiamo ripristinare tutto se la dimensione del messaggio e la dimensione vera sono uguali
+000089F4  6600 000E                        373  	BNE		BYTE
+000089F8  143C 0000                        374  	MOVE.B	#0,D2	
+000089FC  13FC 0001 0000803B               375  	MOVE.B	#1,FASE2		*abbiamo finito,quindi possiamo riprendere dall'inizio: il prossimo byte sarà una nuova dimensione
+00008A04                                   376  
+00008A04                                   377  
+00008A04                                   378  BYTE
+00008A04                                   379  
+00008A04  13C2 00008037                    380  	MOVE.B	D2,CNTB2
+00008A0A                                   381  	
+00008A0A  261F                             382  	MOVE.L	(A7)+,D3
+00008A0C  241F                             383  	MOVE.L	(A7)+,D2
+00008A0E  221F                             384  	MOVE.L	(A7)+,D1
+00008A10  201F                             385  	MOVE.L	(A7)+,D0
+00008A12  225F                             386  	MOVE.L	(A7)+,A1
+00008A14  205F                             387  	MOVE.L	(A7)+,A0
+00008A16                                   388  
+00008A16                                   389  	
+00008A16  4E73                             390  FINITO	RTE
+00008A18                                   391  
+00008A18                                   392  	
+00008A18                                   393  	END	INIT
+
+No errors detected
+No warnings generated

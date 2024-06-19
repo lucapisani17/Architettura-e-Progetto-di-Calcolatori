@@ -1,0 +1,85 @@
+00000000                                     1  **********
+00000000                                     2  *SECONDO TRASMETTITORE
+00000000                                     3  
+00000000                                     4  
+00008000                                     5  	ORG	$8000
+00008000  01 02 03 04 05 06 07 08 09 ...     6  MES	DC.B	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+0000800F  0F                                 7  DIM	DC.B	15
+00008010  01                                 8  SIZE	DC.B	1
+00008011  00                                 9  CNTB	DC.B	0
+00008012                                    10  
+00008012  =00002006                         11  PIADB	EQU	$2006
+00008012  =00002007                         12  PIACB	EQU	$2007
+00008012                                    13  
+00008012                                    14  
+00008200                                    15  	ORG	$8200
+00008200  4EB9 00008222                     16  INIT	JSR	INIZIALIZZA
+00008206                                    17  
+00008206                                    18  	*Invio dimensione
+00008206  207C 00002006                     19  	MOVEA.L	#PIADB,A0
+0000820C                                    20  	
+0000820C  1010                              21  	MOVE.B	(A0),D0		*Lettura fittizia
+0000820E  10B9 0000800F                     22  	MOVE.B	DIM,(A0)	*invio della dimensione
+00008214                                    23  
+00008214  40C1                              24  	MOVE.W	SR,D1
+00008216  0241 D8FF                         25  	ANDI.W	#$D8FF,D1	*maschera per le interruzioni. 
+0000821A  46C1                              26  	MOVE.W	D1,SR
+0000821C                                    27  
+0000821C  4EF9 0000821C                     28  LOOP	JMP	LOOP
+00008222                                    29  
+00008222                                    30  
+00008222                                    31  INIZIALIZZA	
+00008222  11FC 0000 2007                    32  	MOVE.B	#0,PIACB
+00008228  11FC 00FF 2006                    33  	MOVE.B	#$FF,PIADB
+0000822E  11FC 0025 2007                    34  	MOVE.B	#%00100101,PIACB
+00008234  4E75                              35  	RTS
+00008236                                    36  
+00008236                                    37  *interruzione livello	4 mappato a $70
+00008800                                    38  	ORG	$8800
+00008800                                    39  INT4
+00008800                                    40  
+00008800  2F08                              41  	MOVE.L	A0,-(A7)
+00008802  2F09                              42  	MOVE.L	A1,-(A7)
+00008804  2F00                              43  	MOVE.L	D0,-(A7)
+00008806  2F01                              44  	MOVE.L	D1,-(A7)
+00008808  2F02                              45  	MOVE.L	D2,-(A7)
+0000880A                                    46  
+0000880A  4240                              47  	CLR	D0
+0000880C  4241                              48  	CLR	D1
+0000880E  4242                              49  	CLR	D2
+00008810  207C 00002006                     50  	MOVEA.L	#PIADB,A0
+00008816  227C 00008000                     51  	MOVEA.L	#MES,A1
+0000881C  1039 00008010                     52  	MOVE.B	SIZE,D0
+00008822  1239 00008011                     53  	MOVE.B	CNTB,D1
+00008828                                    54  	
+00008828                                    55  	*Lettura fittizia
+00008828  1410                              56  	MOVE.B	(A0),D2		*Cosi posso riusare D2
+0000882A                                    57  	
+0000882A                                    58  	
+0000882A  1439 0000800F                     59  	MOVE.B	DIM,D2
+00008830  C4C0                              60  	MULU		D0,D2		*Dimensione totale dei byte da inviare
+00008832                                    61  
+00008832  B401                              62  	CMP.B		D1,D2		*un controllo su D2  
+00008834  6700 0014                         63  	BEQ		RIPRISTINO
+00008838                                    64  
+00008838  D2C1                              65  	ADDA		D1,A1
+0000883A  1091                              66  	MOVE.B	(A1),(A0)
+0000883C  5201                              67  	ADD.B		#1,D1
+0000883E  B401                              68  	CMP.B		D1,D2
+00008840  6600 0002                         69  	BNE		FUORI
+00008844                                    70  	
+00008844                                    71  
+00008844                                    72  FUORI	
+00008844  13C1 00008011                     73  	MOVE.B	D1,CNTB
+0000884A                                    74  RIPRISTINO
+0000884A  241F                              75  	MOVE.L	(A7)+,D2
+0000884C  221F                              76  	MOVE.L	(A7)+,D1
+0000884E  201F                              77  	MOVE.L	(A7)+,D0
+00008850  225F                              78  	MOVE.L	(A7)+,A1
+00008852  205F                              79  	MOVE.L	(A7)+,A0
+00008854                                    80  	
+00008854  4E73                              81  	RTE
+00008856                                    82  	END	INIT
+
+No errors detected
+No warnings generated

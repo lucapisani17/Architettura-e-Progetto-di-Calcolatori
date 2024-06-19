@@ -1,0 +1,150 @@
+*************************************************************************************************
+*Il programma serve a provare una semplice configurazione costituita da due 
+*sistemi S1 ed S2 dotati entrambi di un processore M68000, una ROM di 8K (addr $0-$1FFF), 
+*una RAM di 10K (addr $8000-$A7FF) e un device parallelo PIA mappato a $2004.
+*I due PIA sono interconnessi tra loro e mediante un protocollo di handshaking consentono ai
+*due sistemi di scambiarsi un messaggio. In particolare, il sistema S1 trasferisce un vettore di N caratteri
+*verso il sistema S2 sul porto parallelo. Il messaggio si trova in un'area di memoria del sistema S1
+*e viene salvato in una ulteriore area di memoria nel sistema S2.
+*
+*Questo driver serve per la programmazione del sistema S2, che riceve il messaggio sulla PIA
+*utilizzando le interruzioni.
+*
+*La ricezione di un carattere sulla PIA e' gestita mediante interruzione di livello 3 (la PIA non supporta le int.vettorizzate in ASIM)
+*che corrisponde al vettore 27 mappato in area ROM alla locazione $6C: in tale locazione
+*è contenuto l'indirizzo della ISR in RAM ($8700). 
+*All'arrivo dell'interrupt la ISR acquisisce il carattere e lo salva in un'opportuna posizione in memoria.
+*************************************************************************************************
+*	   PIA1		    PIA2
+*	______	 _______
+*	   CA1	|<---------|   CB2
+*	   CA2	|--------->|   CB1
+*	______|<==== |_______
+*	   CB1	|<---------|   CA2
+*	   CB2	|--------->|   CA1
+*	______| ====>|_______
+*
+************************************************************************************************
+
+
+	
+
+************************************************************
+**********AREA DATI**************************************
+	ORG	$8000
+MSG	DS.B	6
+DIM	DC.B	6
+COUNT		DC.B	0
+
+
+***********************************************************
+***********AREA MAIN*********************************	
+	ORG    $8200
+
+PIADA	EQU    $2004	;indirizzo di PIA-A dato, usato in input
+PIACA	EQU    $2005	;indirizzo di PIA-A stato/controllo
+
+MAIN	JSR	DVAIN	;inizializza PIA porto A
+				
+	MOVE.W	SR,D0	;legge il registro di stato
+	ANDI.W	#$D8FF,D0 ;maschera per reg stato (stato utente, int abilitati)
+	MOVE.W	D0,SR	;pone liv int a 000
+
+LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+	
+
+*********************************************************************************************************
+*********************************************************************************************************
+*INIZIALIZZAZIONE DELLA PIA: PORTO A	        	
+*   CRA |0 |0 |1 0 0 |1 |0 1|
+*	           |	  |   |____Controllo CA1: interruzioni abilitate su IRQA, CA1 sensibile a fronte 1->0
+*			   |	  |	
+*		       |	  |________Accesso a DRA: il prossimo accesso ad indirizzo pari è per PRA
+*		       |_______________Controllo CA2: 1=>linea di uscita, con gli altri due bit a 00 diventa alto sul fronte
+*												attivo di CA1 e si riabbassa a seguito di una lettura su PRA
+*											  0=>linea di ingresso, si comporta come CA1 (CRA3 come CRA0,
+*											    CRA4 come CRA1, IRQA2 come IRQA1)
+*
+*	DRA=0 => PORTO A PORTO DI INGRESSO
+*
+***********************************************************************************************************
+DVAIN	MOVE.B	#0,PIACA		;mette 0 nel registro controllo così al prossimo accesso a PIADA (indirizzo pari)
+*								;selezionerà il registro direzione del porto A
+	MOVE.B	#$00,PIADA		    ;accede a DRA e pone DRA=0 : le linee di A sono linee di input	
+	MOVE.B	#%00100101,PIACA  	;imposta il registro di controllo come indicato sopra, ponendo IRQA1=1 e IRQA2=1
+*								;i bit CRA7 e CRA6 sono a sola lettura	
+    RTS
+
+*******************************************************************************************************
+*La pia-A ha ricevuto un carattere dalla pia-B partner, interrompe il processore che
+*con la ISR riceve il carattere e lo salva in memoria
+*ISR a $8700 associata all' interrupt di liv. 3  #vect 27  mappato a $6C della ROM
+********************************************************************************************************	
+	
+	ORG $8700		
+
+INT3    	MOVE.L  A1,-(A7)		;salvataggio registri
+	MOVE.L  A0,-(A7)
+	MOVE.L  D0,-(A7)
+
+	MOVEA.L	#PIADA,A1
+	MOVEA.L	#MSG,A0	;indirizzo area di salvataggio
+	MOVE.B	COUNT,D0	;contatore corrente degli elementi ricevuti
+
+	
+	MOVE.B 	(A1),(A0,D0)	;acquisisce il carattere e lo trasferisce in memoria
+*						;la lettura da PRA fa abbassare CRA7 e CA2 => nell'altro sistema si abbassa CB1
+*						;ciò corrisponde all'attivazione di CRB7 che funge da DATA ACKNOWLEDGE
+	
+	ADD.B	#1,D0
+	MOVE.B	D0,COUNT
+
+	MOVE.L  (A7)+,D0		;ripristino registri 
+	MOVE.L  (A7)+,A0
+	MOVE.L  (A7)+,A1
+	
+	RTE
+
+
+	END	MAIN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

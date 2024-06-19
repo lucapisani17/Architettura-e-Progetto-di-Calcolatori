@@ -1,0 +1,130 @@
+00000000                                     1  *************************************************************************************************
+00000000                                     2  *Il programma serve a provare una semplice configurazione costituita da due 
+00000000                                     3  *sistemi S1 ed S2 dotati entrambi di un processore M68000, una ROM di 8K (addr $0-$1FFF), 
+00000000                                     4  *una RAM di 10K (addr $8000-$A7FF) e un device parallelo PIA mappato a $2004.
+00000000                                     5  *I due PIA sono interconnessi tra loro e mediante un protocollo di handshaking consentono ai
+00000000                                     6  *due sistemi di scambiarsi un messaggio. In particolare, il sistema S1 trasferisce un vettore di N caratteri
+00000000                                     7  *verso il sistema S2 sul porto parallelo. Il messaggio si trova in un'area di memoria del sistema S1
+00000000                                     8  *e viene salvato in una ulteriore area di memoria nel sistema S2.
+00000000                                     9  *
+00000000                                    10  *Questo driver serve per la programmazione del sistema S1, che effettua il trasferimento sotto interrupt.
+00000000                                    11  *
+00000000                                    12  *************************************************************************************************
+00000000                                    13  *	   PIA1		    PIA2
+00000000                                    14  *	______	 _______
+00000000                                    15  *	   CA1	|<---------|   CB2
+00000000                                    16  *	   CA2	|--------->|   CB1
+00000000                                    17  *	______|<==== |_______
+00000000                                    18  *	   CB1	|<---------|   CA2
+00000000                                    19  *	   CB2	|--------->|   CA1
+00000000                                    20  *	______| ====>|_______
+00000000                                    21  *
+00000000                                    22  ************************************************************************************************
+00000000                                    23  
+00000000                                    24  	
+00000000                                    25  	
+00000000                                    26  
+00000000                                    27  ************************************************************
+00000000                                    28  **********AREA DATI**************************************
+00008000                                    29  	ORG	$8000
+00008000  01 02 03 04 05 06                 30  MSG	DC.B	1,2,3,4,5,6
+00008006  06                                31  DIM	DC.B	6
+00008007  00                                32  COUNT		DC.B	0
+00008008                                    33  
+00008008                                    34  
+00008008                                    35  ***********************************************************
+00008008                                    36  ***********AREA MAIN*********************************	
+00008200                                    37  	ORG    $8200
+00008200                                    38  
+00008200  =00002006                         39  PIADB	EQU    $2006	;indirizzo di PIA-B dato, usato in output 
+00008200  =00002007                         40  PIACB	EQU    $2007	;indirizzo di PIA-B controllo
+00008200                                    41  
+00008200  4EB9 00008232                     42  MAIN	JSR    DVBOUT	;inizializza PIA porto B in output
+00008206                                    43  
+00008206  227C 00002007                     44  	MOVEA.L	#PIACB,A1	;indirizzo registro di controllo CRB
+0000820C  247C 00002006                     45  	MOVEA.L	#PIADB,A2	;indirizzo registro PRB
+00008212  207C 00008000                     46  	MOVEA.L	#MSG,A0	;indirizzo area messaggio
+00008218                                    47  
+00008218  40C0                              48  	MOVE.W	SR,D0	;legge il registro di stato
+0000821A  0240 D8FF                         49  	ANDI.W	#$D8FF,D0 ;maschera per reg stato (stato utente, int abilitati)
+0000821E  46C0                              50  	MOVE.W	D0,SR	;pone liv int a 000
+00008220                                    51  
+00008220                                    52  * invio primo carattere:	
+00008220  1212                              53  INVIO1	MOVE.B	(A2),D1            ;lettura fittizia da PRB => serve per azzerare CRB7 poichè in generale non sappiamo se la macchina è in reset
+00008222  1490                              54  	MOVE.B	(A0),(A2)	;dato su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+00008224                                    55  *					;ciò fa abbassare CA1 sulla porta gemella dell'altro sistema generando 
+00008224                                    56  *					;un'interruzione che coincide con il segnale DATA READY
+00008224                                    57  
+00008224  13FC 0001 00008007                58  	MOVE.B	#1,COUNT
+0000822C                                    59  
+0000822C                                    60  	
+0000822C                                    61  
+0000822C                                    62  
+0000822C  4EF9 0000822C                     63  LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+00008232                                    64  
+00008232                                    65  
+00008232                                    66  
+00008232                                    67  *********************************************************************************************************
+00008232                                    68  *INIZIALIZZAZIONE DELLA PIA: PORTO B	
+00008232                                    69  *	CRB |0 |0 |1 0 0 |1 |0 1|
+00008232                                    70  *	                   |	    |    |_____Controllo CB1: interruzioni abilitate su IRQB, CB1 sensibile a fronte 1->0
+00008232                                    71  *		       |	    |		
+00008232                                    72  *		       |	    |________Accesso a DRB: il prossimo accesso ad indirizzo pari è per PRB
+00008232                                    73  *		       |____________ Controllo CB2: CRB5=1 significa linea di uscita, con gli altri due bit a 00 diventa alto su fronte 
+00008232                                    74  *                                             		attivo di CB1 e si riabbassa a seguito a scrittura su PRB
+00008232                                    75  *
+00008232                                    76  *	DRB=1 => PORTO B PORTO DI USCITA
+00008232                                    77  *
+00008232                                    78  ***********************************************************************************************************
+00008232  11FC 0000 2007                    79  DVBOUT	MOVE.B	#0,PIACB		;seleziona il registro direzione di PIA porto B 
+00008238  11FC 00FF 2006                    80  	MOVE.B	#$FF,PIADB	  		;accede a DRB e pone DRA=1 : le linee di B sono linee di output	
+0000823E  11FC 0025 2007                    81  	MOVE.B	#%00100101,PIACB   	;imposta il registro di controllo come indicato sopra
+00008244                                    82  *								;i bit CRB7 e CRB6 sono a sola lettura	
+00008244  4E75                              83  	RTS
+00008246                                    84  
+00008246                                    85  
+00008246                                    86  *******************************************************************************************************
+00008246                                    87  *La pia-A dell'altro sistema ha appena letto un carattere e scatena l'handshake che genera una interrupt
+00008246                                    88  *su questo sistema: la ISR invia il prossimo carattere prelevandolo dalla memoria se ce ne sono ancora
+00008246                                    89  *da trsmettere.
+00008246                                    90  *ISR a $8800 associata all' interrupt di liv. 4  #vect 28  mappato a $70 della ROM
+00008246                                    91  ********************************************************************************************************	
+00008246                                    92  	
+00008800                                    93  	ORG $8800		
+00008800                                    94  
+00008800  2F09                              95  INT4    	MOVE.L	A1,-(A7)		;salvataggio registri
+00008802  2F08                              96  	MOVE.L	A0,-(A7)
+00008804  2F00                              97  	MOVE.L	D0,-(A7)
+00008806  2F01                              98  	MOVE.L	D1,-(A7)
+00008808  2F02                              99  	MOVE.L	D2,-(A7)
+0000880A                                   100  
+0000880A  227C 00002006                    101  	MOVEA.L	#PIADB,A1
+00008810  207C 00008000                    102  	MOVEA.L	#MSG,A0	;indirizzo area di salvataggio
+00008816  1039 00008006                    103  	MOVE.B	DIM,D0	;dim del messaggio
+0000881C  1239 00008007                    104  	MOVE.B	COUNT,D1	;contatore corrente degli elementi ricevuti
+00008822                                   105  
+00008822  B001                             106  	CMP.B	D1,D0
+00008824  6700 0010                        107  	BEQ	FINE
+00008828                                   108  	
+00008828  1411                             109  INVIO	MOVE.B	(A1),D2            ;lettura fittizia da PRB => serve per azzerare CRB7 dopo il primo carattere, altrimenti resta settato con l'ack
+0000882A  12B0 1000                        110  	MOVE.B	(A0,D1),(A1)	;carattere corrente da trasferire in D2;
+0000882E                                   111  *					;dato su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+0000882E                                   112  				
+0000882E  5201                             113  	ADD.B	#1,D1			;aggiorno il contatore degli elementi trasmessi
+00008830  13C1 00008007                    114  	MOVE.B	D1,COUNT
+00008836                                   115  
+00008836  241F                             116  FINE	MOVE.L  (A7)+,D2		;ripristino registri 
+00008838  221F                             117  	MOVE.L  (A7)+,D1
+0000883A  201F                             118  	MOVE.L  (A7)+,D0	
+0000883C  205F                             119  	MOVE.L  (A7)+,A0
+0000883E  225F                             120  	MOVE.L  (A7)+,A1
+00008840                                   121  	
+00008840  4E73                             122  	RTE
+00008842                                   123  
+00008842                                   124  
+00008842                                   125  
+00008842                                   126  
+00008842                                   127  	END	MAIN
+
+No errors detected
+No warnings generated

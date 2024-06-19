@@ -1,0 +1,77 @@
+00000000                                     1  *************************************************************************************************
+00000000                                     2  *
+00000000                                     3  *Questo driver serve per la programmazione del sistema S1, che effettua il trasferimento con un semplice ciclo.
+00000000                                     4  *
+00000000                                     5  *************************************************************************************************
+00000000                                     6  *	   PIA1		    PIA2
+00000000                                     7  *	______	 _______
+00000000                                     8  *	   	|           |   
+00000000                                     9  *	   	|           |   
+00000000                                    10  *	______|           |_______
+00000000                                    11  *	   CB1	|<---------|   CA2
+00000000                                    12  *	   CB2	|--------->|   CA1
+00000000                                    13  *	______| ====>|_______
+00000000                                    14  *
+00000000                                    15  ************************************************************************************************
+00000000                                    16  
+00000000                                    17  
+00000000                                    18  **********AREA DATI**************************************
+00008000                                    19  	ORG	$8000
+00008000  61 62 63 64 65 66 67 68 69 ...    20  MSG	DC.B	'abcdefghiazbcdefghiztbcdefghitjbcdefghijobcdefghiaabcdefghia'
+0000803C  3C                                21  MC	DC.B	60
+0000803D                                    22  ***********************************************************
+0000803D                                    23  
+0000803D                                    24  
+0000803D                                    25  ***********AREA MAIN*********************************	
+00008200                                    26  	ORG    $8200
+00008200                                    27  
+00008200  =00002006                         28  PIADB	EQU    $2006			;indirizzo di PIA-B dato, usato in output 
+00008200  =00002007                         29  PIACB	EQU    $2007			;indirizzo di PIA-B controllo
+00008200                                    30  
+00008200  4EB9 0000823C                     31  MAIN	JSR    DVBOUT		;inizializza PIA porto B in output
+00008206                                    32  
+00008206  227C 00002007                     33  	MOVEA.L	#PIACB,A1	;indirizzo registro di controllo CRB
+0000820C  247C 00002006                     34  	MOVEA.L	#PIADB,A2	;indirizzo registro PRB
+00008212  207C 00008000                     35  	MOVEA.L	#MSG,A0	;indirizzo area messaggio
+00008218  1039 0000803C                     36  	MOVE.B	MC,D0		;dim del messaggio
+0000821E                                    37  	
+0000821E  4241                              38  	CLR	D1			;appoggio
+00008220  4242                              39  	CLR	D2			;contatore elementi trasmessi
+00008222                                    40  
+00008222                                    41  
+00008222  1212                              42  INVIO	MOVE.B	(A2),D1            ;lettura fittizia da PRB => serve per azzerare CRB7 dopo il primo carattere, altrimenti resta settato con l'ack
+00008224  1218                              43  	MOVE.B	(A0)+,D1	;carattere corrente da trasferire in D2;
+00008226  1481                              44  	MOVE.B	D1,(A2)		;dato su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+00008228                                    45  *					;ciò fa abbassare CA1 sulla porta gemella dell'altro sistema generando 
+00008228                                    46  *					;un'interruzione che coincide con il segnale DATA READY
+00008228  5202                              47  	ADD.B		#1,D2		;incremento contatore elementi trasmessi
+0000822A                                    48  
+0000822A  1211                              49  ciclo2	MOVE.B	(A1),D1		;In attesa di DATA ACKNOWLEDGE
+0000822C  0201 0080                         50  	ANDI.B		#$80,D1	;aspetta che CRB7 divenga 1
+00008230  67F8                              51  	BEQ		ciclo2
+00008232                                    52  
+00008232  B042                              53  	CMP	D2,D0			;controllo se ho finito di trasmettere
+00008234  66EC                              54  	BNE	INVIO
+00008236                                    55  
+00008236                                    56  
+00008236  4EF9 00008236                     57  LOOP  	JMP	LOOP			;ciclo caldo dove il processore attende interrupt		
+0000823C                                    58  ***********************************************************************************************************
+0000823C                                    59  
+0000823C                                    60  
+0000823C                                    61  *********************************************************************************************************
+0000823C                                    62  *INIZIALIZZAZIONE DELLA PIA: PORTO B	
+0000823C                                    63  *	CRB |0 |0 |1 0 0 |1 |0 0|
+0000823C                                    64  *
+0000823C                                    65  *	DRB=1 => PORTO B PORTO DI USCITA
+0000823C                                    66  *
+0000823C                                    67  ***********************************************************************************************************
+0000823C  11FC 0000 2007                    68  DVBOUT	MOVE.B	#0,PIACB		;seleziona il registro direzione di PIA porto B 
+00008242  11FC 00FF 2006                    69  	MOVE.B	#$FF,PIADB	  		;accede a DRB e pone DRA=1 : le linee di B sono linee di output	
+00008248  11FC 0024 2007                    70  	MOVE.B	#%00100100,PIACB   		;imposta il registro di controllo come indicato sopra
+0000824E                                    71  *							;i bit CRB7 e CRB6 sono a sola lettura	
+0000824E  4E75                              72  	RTS
+00008250                                    73  
+00008250                                    74  	END	MAIN
+
+No errors detected
+No warnings generated

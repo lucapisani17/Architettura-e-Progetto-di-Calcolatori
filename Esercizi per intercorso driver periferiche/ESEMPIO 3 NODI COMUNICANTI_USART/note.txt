@@ -1,0 +1,2 @@
+il disegno dell'architettura è del tutto analogo a quello dell'esempio di 3 nodi comunicanti con PIA,
+dove ciascuna PIA è sostituita da una USART. I livelli di interruzione sono rispettivamente 3 e 4 per Rx e Tx

@@ -1,0 +1,127 @@
+*************************************************************************************************
+*Il programma serve a provare una semplice configurazione costituita da due 
+*sistemi S1 ed S2 dotati entrambi di un processore M68000, una ROM di 8K (addr $0-$1FFF), 
+*una RAM di 10K (addr $8000-$A7FF) e un device parallelo PIA mappato a $2004.
+*I due PIA sono interconnessi tra loro e mediante un protocollo di handshaking consentono ai
+*due sistemi di scambiarsi un messaggio. In particolare, il sistema S1 trasferisce un vettore di N caratteri
+*verso il sistema S2 sul porto parallelo. Il messaggio si trova in un'area di memoria del sistema S1
+*e viene salvato in una ulteriore area di memoria nel sistema S2.
+*
+*Questo driver serve per la programmazione del sistema S1, che effettua il trasferimento con un semplice ciclo.
+*
+*************************************************************************************************
+*	   PIA1		    PIA2
+*	______	 _______
+*	   CA1	|<---------|   CB2
+*	   CA2	|--------->|   CB1
+*	______|<==== |_______
+*	   CB1	|<---------|   CA2
+*	   CB2	|--------->|   CA1
+*	______| ====>|_______
+*
+************************************************************************************************
+
+	
+	
+
+************************************************************
+**********AREA DATI**************************************
+	ORG	$8000
+MSG	DC.B	1,2,3,4,5,6
+DIM	DC.B	6
+
+
+***********************************************************
+***********AREA MAIN*********************************	
+	ORG    $8200
+
+PIADB	EQU    $2006	;indirizzo di PIA-B dato, usato in output 
+PIACB	EQU    $2007	;indirizzo di PIA-B controllo
+
+MAIN	JSR    DVBOUT	;inizializza PIA porto B in output
+
+	MOVEA.L	#PIACB,A1	;indirizzo registro di controllo CRB
+	MOVEA.L	#PIADB,A2	;indirizzo registro PRB
+	MOVEA.L	#MSG,A0	;indirizzo area messaggio
+	MOVE.B	DIM,D0	;dim del messaggio
+	
+	CLR	D1	;appoggio
+	CLR	D2	;contatore elementi trasmessi
+
+
+INVIO	MOVE.B	(A2),D1            ;lettura fittizia da PRB => serve per azzerare CRB7 dopo il primo carattere, altrimenti resta settato con l'ack
+	MOVE.B	(A0)+,(A2)	;carattere corrente da trasferire su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+*								;ciò fa abbassare CA1 sulla porta gemella dell'altro sistema generando 
+*								;un'interruzione che coincide con il segnale DATA READY
+	ADD.B		#1,D2		    ;incremento contatore elementi trasmessi
+
+ciclo2	MOVE.B	(A1),D1		;In attesa di DATA ACKNOWLEDGE
+	ANDI.B	#$80,D1				;aspetta che CRB7 divenga 1
+	BEQ	ciclo2
+
+	CMP	D2,D0	;controllo se ho finito di trasmettere
+	BNE	INVIO
+
+
+LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+
+
+
+*********************************************************************************************************
+*INIZIALIZZAZIONE DELLA PIA: PORTO B	
+*	CRB |0 |0 |1 0 0 |1 |0 0|
+*	           |	  |   |____Controllo CB1: interruzioni disabilitate su IRQB, CB1 sensibile a fronte 1->0
+*		       |	  |		
+*		       |	  |________Accesso a DRB: il prossimo accesso ad indirizzo pari è per PRB
+*		       |_______________Controllo CB2: linea di uscita, con gli altri due bit a 00 diventa alto su fronte 
+*                                             attivo di CB1 e si riabbassa a seguito a scrittura su PRB
+*
+*	DRB=1 => PORTO B PORTO DI USCITA
+*
+***********************************************************************************************************
+DVBOUT	MOVE.B	#0,PIACB		;seleziona il registro direzione di PIA porto B 
+	MOVE.B	#$FF,PIADB	  		;accede a DRB e pone DRA=1 : le linee di B sono linee di output	
+	MOVE.B	#%00100100,PIACB   	;imposta il registro di controllo come indicato sopra
+*								;i bit CRB7 e CRB6 sono a sola lettura	
+	RTS
+
+	
+	END	MAIN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

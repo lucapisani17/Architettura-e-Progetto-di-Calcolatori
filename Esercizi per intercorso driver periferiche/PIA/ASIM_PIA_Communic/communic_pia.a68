@@ -1,0 +1,268 @@
+*************************************************************************************************
+*Il programma serve a provare la configurazione "communic asincrona" costituita da due 
+*sistemi simmetrici ciascuno con un processore M68000, una ROM di 8K (addr $0-$1FFF), 
+*una RAM di 10K (addr $8000-$A7FF), un device parallelo PIA mappato a $2004, un device
+*seriale di tipo TERMINAL mappato a $2000.
+*I due PIA sono interconnessi e mediante un protocollo di handshaking consentono ai
+*due sistemi di scambiarsi i caratteri digitati sul dispositivo TERMINAL. I device interagiscono
+*con i rispettivi processori mediante le linee di interruzione utilizzando un meccanismo di  
+*interrupt autovettorizzato (TERMINAL e PIA non supportano le int.vettorizzate). 
+*
+*In particolare i dati immessi da tastiera sono acquisiti, alla pressione del tasto ENTER,
+*mediante interruzione di livello 1, che corrisponde al vettore 25 mappato in area ROM alla locazione $64: 
+*in tale locazione è contenuto l'indirizzo della ISR in RAM ($8500).
+*Nella ISR, il dato viene inviato alla sezione A del dispositivo parallelo PIA per la trasmissione verso il dispositivo 
+*PIA connesso all'altro sistema.
+*
+*La ricezione di un carattere sul dispositivo PIA e' gestita mediante interruzione di livello 3,
+*che corrisponde al vettore 27 mappato in area ROM alla locazione $6C: in tale locazione
+*è contenuto l'indirizzo della ISR in RAM ($8700). 
+*All'arrivo dell'interrupt la ISR acquisisce il dato e lo invia al terminal per la visualizzazione.
+*
+*Un'ulteriore ISR mappata sull'autovettore 26 gestisce le condizioni di buffer full sul TERMINAL.
+*Tale ISR invia sulla PIA i 256 caratteri nel buffer.
+*************************************************************************************************
+*	   PIA1		    PIA2
+*	______	 _______
+*	   CA1	|<---------|   CB2
+*	   CA2	|--------->|   CB1
+*	______|<==== |_______
+*	   CB1	|<---------|   CA2
+*	   CB2	|--------->|   CA1
+*	______| ====>|_______
+*
+************************************************************************************************
+
+
+	
+BEGIN	ORG    $8200
+
+
+PIADA	EQU    $2004	;indirizzo di PIA-A dato, usato in input
+PIACA	EQU    $2005	;indirizzo di PIA-A stato/controllo
+PIADB	EQU    $2006	;indirizzo di PIA-B dato, usato in output 
+PIACB	EQU    $2007	;indirizzo di PIA-B controllo
+
+TERD	EQU    $2000    ;indirizzo di TERMINAL registro dato
+TERC	EQU    $2001	;indirizzo di TERMINAL registro stato/controllo
+
+		JSR    DVAIN	;inizializza PIA porto A
+		JSR    DVBOUT	;inizializza PIA porto B
+		JSR    DVTER	;inizializza terminal
+		MOVE.W	SR,D0	;legge il registro di stato
+		ANDI.W	#$D8FF,D0 ;maschera per reg stato (stato utente, int abilitati)
+		MOVE.W	D0,SR	;pone liv int a 000
+
+LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+	
+
+*********************************************************************************************************
+*********************************************************************************************************
+*INIZIALIZZAZIONE DELLA PIA: PORTO A IN INGRESSO	        	
+*   CRA |0 |0 |1 0 0 |1 |0 1|
+*	           |	  |   |____Controllo CA1: b0=1 interruzioni abilitate su IRQA, 
+*											  b1=0 CA1 sensibile a fronte 1->0 in corrispondenza del quale si alza IRQA
+*			   |	  |	
+*		       |	  |________Accesso a DRA: il prossimo accesso ad indirizzo pari è per PRA
+*		       |_______________Controllo CA2: b5=1: CA2 è una linea di uscita, 
+*											  b4=b3=0: CA2 si abbassa dopo una lettura su PRA
+*												       e si rialza sul prossimo fronte attivo di CA1
+*											 
+*
+*	DRA=0 => PORTO A PORTO DI INGRESSO
+*
+***********************************************************************************************************
+DVAIN	MOVE.B	#0,PIACA		;mette 0 nel registro controllo così al prossimo accesso a PIADA (indirizzo pari)
+*								;selezionerà il registro direzione del porto A
+	MOVE.B	#$00,PIADA		    ;accede a DRA e pone DRA=0 : le linee di A sono linee di input	
+	MOVE.B	#%00100101,PIACA  	;imposta il registro di controllo come indicato sopra, ponendo IRQA1=1 e IRQA2=1
+*								;i bit CRA7 e CRA6 sono a sola lettura	
+    RTS
+
+***********************************************************************************************************
+*********************************************************************************************************
+*INIZIALIZZAZIONE DELLA PIA: PORTO B IN USCITA	
+*	CRB |0 |0 |1 0 0 |1 |0 0|
+*	           |	  |   |____Controllo CB1: interruzioni disabilitate su IRQB, CB1 sensibile a fronte 1->0
+*		       |	  |		
+*		       |	  |________Accesso a DRB: il prossimo accesso ad indirizzo pari è per PRB
+*		       |_______________Controllo CB2: b5=1: CA2 è una linea di uscita, 
+*											  b4=b3=0: CA2 si abbassa dopo una scrittura su PRA
+*												       e si rialza sul prossimo fronte attivo di CB1.
+*													   Il bit CRB7 deve essere prima abbassato con un'operazione di lettura
+*											  
+*
+*	DRB=1 => PORTO B PORTO DI USCITA
+*
+***********************************************************************************************************
+
+DVBOUT	MOVE.B	#0,PIACB		;seleziona il registro direzione di PIA porto B 
+	MOVE.B	#$FF,PIADB	  		;accede a DRB e pone DRA=1 : le linee di B sono linee di output	
+	MOVE.B	#%00100100,PIACB   	;imposta il registro di controllo come indicato sopra
+*								;i bit CRB7 e CRB6 sono a sola lettura	
+	RTS
+
+***********************************************************************************************************
+**************************************************************************************************************
+*INIZIALIZZAZIONE DEL TERMINALE: 
+*
+*	CNTRL |0 |0 | 1 | 1 | 1 | 1 | 1 | 1 |
+*		  |   |   |   |   |   |   |   |__Abilita interruzioni su Buffer full
+*		  |   |   |   |   |   |   |____Abilita interruzioni su Enter
+*		  |   |   |   |   |   |______Pulisci schermo
+*		  |   |   |   |   |________Pulisci buffer tastiera
+*		  |   |   |   |__________Abilita tastiera
+*		  |   |   |____________Abilita echo
+*		  |   |______________Stato di buffer full
+*		  |________________Stato di Enter inviato
+**************************************************************************************************************   		
+DVTER	MOVE.B	#$3f,TERC	;seleziona indirizzo stato/controllo
+	RTS			 
+
+	
+	
+	
+***********************************************************************************************************
+*********************************************************************************************************
+*ISR per la gestione dato proveniente dalla tastiera di TERMINAL e spedito, per tramite del
+*PIA porto B, all'altro sistema.
+*ISR associata all'interrupt di liv. 1, #vect 25 mappato a $64 della ROM con ISR a $8500 
+*********************************************************************************************************
+
+	ORG	$8500		ricevi da tastiera
+INT1	MOVE.L	A0,-(A7)		;push di A0,A1,A2,D0,D1 in stack supervisor
+	MOVE.L	A1,-(A7)
+	MOVE.L	A2,-(A7)
+	MOVE.L	D0,-(A7)
+	MOVE.L	D1,-(A7)
+	MOVEA.L	#TERD,A0
+	MOVEA.L	#PIADB,A1
+	MOVEA.L	#PIACB,A2
+
+INPUT	MOVE.B	(A0),D0			;acquisisci dato da terminal
+
+*trasferisci il carattere letto alla PIA-B con handshaking
+        MOVE.B  (A1),D1         ;lettura fittizia => serve per azzerare CRB7 dopo il primo carattere, altrimenti resta settato con l'ack
+        MOVE.B  D0,(A1)         ;Dato su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+*								;ciò fa abbassare CA1 sulla porta gemella dell'altro sistema generando 
+*								;un'interruzione che coincide con il segnale DATA READY
+	
+ciclo2	MOVE.B	(A2),D1			;In attesa di DATA ACKNOWLEDGE
+	ANDI.B	#$80,D1				;aspetta che CRB7 divenga 1
+	BEQ	ciclo2
+			
+*fine trasferimento e handshaking
+	
+	CMP.B   	#13,D0		;Se il carattere ricevuto è ENTER	
+	BNE     	INPUT		;termina altrimenti prossimo carattere
+	ORI.B	#$1C,TERC		;riabilita tastiera ,pulisce buffer e video
+	MOVE.L 	(A7)+,D1		;ripristino di D0,D1,A2,A1,A0
+	MOVE.L	(A7)+,D0
+	MOVE.L	(A7)+,A2
+	MOVE.L	(A7)+,A1
+	MOVE.L	(A7)+,A0
+	RTE
+
+**************************************************************************************************************
+*ISR per buffer full: ricevuta una richiesta di interruzione per buffer full il processore la serve inviando 
+*tutti i 256 caratteri presenti nel buffer
+*ISR a $8600 associata all'interrupt di livello 2 #vect (24+2) => mappato a 4*26 = 104 = $68 
+***************************************************************************************************************
+	ORG	$8600		
+INT2	MOVE.L	A0,-(A7)		;push di A0,A1,A2,D0,D1 in stack supervisore
+	MOVE.L	A1,-(A7)
+	MOVE.L	A2,-(A7)
+	MOVE.L	D0,-(A7)
+	MOVE.L	D1,-(A7)
+	MOVE.L	D2,-(A7)
+	MOVEA.L	#TERD,A0
+	MOVEA.L	#PIADB,A1
+	MOVEA.L	#PIACB,A2
+	MOVE.B	#255,D2		;#caratteri da trasferire
+	
+SWAP	MOVE.B	(A0),D0			;acquisisci dato da terminal
+
+*trasferisci il carattere letto alla PIA-B con handshaking
+	MOVE.B  (A1),D1         ;lettura fittizia => serve per azzerare CRB7 dopo il primo carattere, altrimenti resta settato con l'ack
+	MOVE.B  D0,(A1)         ;Dato su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+*							;ciò fa abbassare CA1 sulla porta gemella dell'altro sistema generando 
+*							;un'interruzione che coincide con il segnale DATA READY
+	
+	
+ciclo3	MOVE.B	(A2),D1		;In attesa di DATA ACKNOWLEDGE
+	ANDI.B	#$80,D1		;aspetta che CRB7 divenga 1
+	BEQ	ciclo3
+			
+*fine trasferimento e handshaking
+		
+	DBRA    	D2,SWAP	;contatore di bit inviati	
+	ORI.B	#$1C,TERC	;riabilita tastiera ,pulisce buffer e video
+	MOVE.L	(A7)+,D2	;ripristino di D0,D1,A2,A1,A0
+	MOVE.L 	(A7)+,D1
+	MOVE.L	(A7)+,D0
+	MOVE.L	(A7)+,A2
+	MOVE.L  	(A7)+,A1
+	MOVE.L  	(A7)+,A0
+	RTE
+
+*******************************************************************************************************
+*La pia-A ha ricevuto un carattere dalla pia-B partner, interrompe il processore che
+*con la ISR riceve il carattere e lo trasmette direttamente al proprio TERMINAL per la visualiz-
+*zazione.
+*ISR a $8700 associata all' interrupt di liv. 3  #vect 27  mappato a $6C della ROM
+********************************************************************************************************	
+	
+	ORG $8700		
+
+INT3    	ANDI.B		#%11101001,TERC	;disabilita: tastiera,cancella video,interruzioni su enter		 
+	MOVE.L  A1,-(A7)		;salvataggio registri
+	MOVE.L  A0,-(A7)
+	MOVE.L  D0,-(A7)
+
+	MOVEA.L  #TERD,A0	;inizializzazione indirizzi device
+	MOVEA.L  #PIADA,A1
+	
+	MOVE.B 	(A1),(A0)	;acquisisce il carattere e lo trasferisce a Terminal
+*						;la lettura da PRA fa abbassare CRA7 e CA2 => nell'altro sistema si abbassa CB1
+*						;ciò corrisponde all'attivazione di CRB7 che funge da DATA ACKNOWLEDGE
+	
+	MOVE.L  (A7)+,D0		;ripristino registri 
+	MOVE.L  (A7)+,A0
+	MOVE.L  (A7)+,A1
+	
+	ORI.B	#$12,TERC	;riabilita tastiera e interruzioni su enter 
+	RTE
+
+
+	END	BEGIN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

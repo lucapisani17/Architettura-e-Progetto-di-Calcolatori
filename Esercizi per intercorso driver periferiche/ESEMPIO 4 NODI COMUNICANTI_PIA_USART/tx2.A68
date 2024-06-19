@@ -1,0 +1,87 @@
+**********
+*SECONDO TRASMETTITORE
+
+
+	ORG	$8000
+MES	DC.B	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+DIM	DC.B	15
+SIZE	DC.B	1
+CNTB	DC.B	0
+
+PIADB	EQU	$2006
+PIACB	EQU	$2007
+
+
+	ORG	$8200
+INIT	JSR	INIZIALIZZA
+
+	*Invio dimensione
+	MOVEA.L	#PIADB,A0
+	
+	MOVE.B	(A0),D0		*Lettura fittizia
+	MOVE.B	DIM,(A0)	*invio della dimensione
+
+	MOVE.W	SR,D1
+	ANDI.W	#$D8FF,D1	*maschera per le interruzioni. 
+	MOVE.W	D1,SR
+
+LOOP	JMP	LOOP
+
+
+INIZIALIZZA	
+	MOVE.B	#0,PIACB
+	MOVE.B	#$FF,PIADB
+	MOVE.B	#%00100101,PIACB
+	RTS
+
+*interruzione livello	4 mappato a $70
+	ORG	$8800
+INT4
+
+	MOVE.L	A0,-(A7)
+	MOVE.L	A1,-(A7)
+	MOVE.L	D0,-(A7)
+	MOVE.L	D1,-(A7)
+	MOVE.L	D2,-(A7)
+
+	CLR	D0
+	CLR	D1
+	CLR	D2
+	MOVEA.L	#PIADB,A0
+	MOVEA.L	#MES,A1
+	MOVE.B	SIZE,D0
+	MOVE.B	CNTB,D1
+	
+	*Lettura fittizia
+	MOVE.B	(A0),D2		*Cosi posso riusare D2
+	
+	
+	MOVE.B	DIM,D2
+	MULU		D0,D2		*Dimensione totale dei byte da inviare
+
+	CMP.B		D1,D2		*un controllo su D2  
+	BEQ		RIPRISTINO
+
+	ADDA		D1,A1
+	MOVE.B	(A1),(A0)
+	ADD.B		#1,D1
+	CMP.B		D1,D2
+	BNE		FUORI
+	
+
+FUORI	
+	MOVE.B	D1,CNTB
+RIPRISTINO
+	MOVE.L	(A7)+,D2
+	MOVE.L	(A7)+,D1
+	MOVE.L	(A7)+,D0
+	MOVE.L	(A7)+,A1
+	MOVE.L	(A7)+,A0
+	
+	RTE
+	END	INIT
+
+
+
+
+

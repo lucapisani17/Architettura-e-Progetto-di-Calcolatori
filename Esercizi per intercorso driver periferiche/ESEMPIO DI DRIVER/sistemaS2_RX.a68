@@ -1,0 +1,144 @@
+*************************************************************************************************
+* RICEVITORE, S2 -> lavora con interruzioni
+* questo sistema riceve uno stream di caratteri organizzato in pacchetti.
+* per poter proseguire con l'acquisizione del successivo pacchetto deve essere 
+* verificato il controllo di uguaglianza fra il primo e l'ultimo byte del pacchetto 
+* precedentemente acquisito. in caso di errore la periferica deve stoppare 
+* l'acquisizione dei pacchetti successivi e fermarsi.
+*************************************************************************************************
+*	   PIA1		    PIA2
+*	S1_TX               S2_RX
+*	______	 _______
+*	   CA1	|           |   CB2
+*	   CA2	|           |   CB1
+*	______|           |_______
+*	   CB1	|<---------|   CA2
+*	   CB2	|--------->|   CA1
+*	______| ====>|_______
+*
+************************************************************************************************
+
+
+**********AREA DATI**************************************
+	ORG	$8000
+MSG		DS.B	60	;DIMENSIONE TOTALE MESSAGGIO
+MC		DC.B	0	;CONTATORE PACCHETTI
+MP		DC.B	0	;CONTATORE CARATTERI IN UN PACCHETTO
+COUNT		DC.B	0	;CONTATORE GENERALE DEI CARATTERI RICEVUTI
+MMC		DC.B	6	;NUMERO PACCHETTI DA RICEVERE
+MMP		DC.B	10	;NUMERO CARATTERI PER PACCHETTO
+
+***********************************************************
+
+
+***********AREA MAIN*********************************	
+	ORG    $8200
+
+PIADA	EQU    $2004			;indirizzo di PIA-A dato, usato in input
+PIACA	EQU    $2005			;indirizzo di PIA-A stato/controllo
+
+MAIN	JSR	DVAIN			;inizializza PIA porto A
+				
+	MOVE.W	SR,D0		;legge il registro di stato
+	ANDI.W	#$D8FF,D0 	;maschera per reg stato (stato utente, int abilitati)
+	MOVE.W	D0,SR		;pone liv int a 000
+
+LOOP  	JMP 		LOOP		;ciclo caldo dove il processore attende interrupt		
+
+*********************************************************************************************************
+
+
+*********************************************************************************************************
+*INIZIALIZZAZIONE DELLA PIA: PORTO A	        	
+*   CRA |0 |0 |1 0 0 |1 |0 1|
+*
+*	DRA=0 => PORTO A PORTO DI INGRESSO
+*
+***********************************************************************************************************
+DVAIN	MOVE.B	#0,PIACA		;mette 0 nel registro controllo così al prossimo accesso a PIADA (indirizzo pari)
+*						;selezionerà il registro direzione del porto A
+	MOVE.B	#$00,PIADA		;accede a DRA e pone DRA=0 : le linee di A sono linee di input	
+	MOVE.B	#%00100101,PIACA  	;imposta il registro di controllo come indicato sopra, ponendo IRQA1=1 e IRQA2=1
+*						;i bit CRA7 e CRA6 sono a sola lettura	
+    RTS
+
+*******************************************************************************************************
+*La pia-A ha ricevuto un carattere dalla pia-B partner, interrompe il processore che
+*con la ISR riceve il carattere e lo salva in memoria
+*ISR a $8700 associata all' interrupt di liv. 3  #vect 27  mappato a $6C della ROM
+********************************************************************************************************	
+	
+	ORG $8700		
+
+INT3	MOVE.L	A4,-(A7)		    
+	MOVE.L	A3,-(A7)		    
+	MOVE.L	A1,-(A7)		;salvataggio registri
+	MOVE.L  	A0,-(A7)
+	MOVE.L  	D0,-(A7)
+	MOVE.L  	D1,-(A7)
+	MOVE.L  	D2,-(A7)
+
+	MOVEA.L	#PIADA,A1	;indirizzo del dato ricevuto
+	MOVEA.L	#MSG,A0	;indirizzo area di salvataggio del messaggio da ricevere
+	MOVE.B	COUNT,D0	;contatore corrente degli elementi ricevuti
+	MOVE.B	MP,D1		;contatore caratteri ricevuti del pacchtto corrente
+	MOVE.B	MC,D2		;contatore pacchetti ricevuti
+
+	
+	MOVE.B 	(A1),(A0,D0)		;la lettura da PRA fa abbassare CRA7 e CA2 => nell'altro sistema si abbassa CB1
+*						;ciò corrisponde all'attivazione di CRB7 che funge da DATA ACKNOWLEDGE
+	
+	ADD.B		#1,D0			;aggiunge uno al contatore dei caratteri ricevuti
+	MOVE.B	D0,COUNT
+
+	ADDQ		#1,D1			;aggiunge uno al contatore dei caratteri del pacchetto corrente
+	MOVE.B	D1,MP			
+	CMP.B		MMP,D1		;se non è l'ultimo carattere del pacchetto 
+	BNE		USCITA		;salta ad uscita
+*						;se è proprio l'ultimo carattere del pacchetto prosegui col confronto
+	ADDA.L	A0,A3			;calcolo l'indirizzo dell'ultimo byte aggiungendo all'indirizzo del primo elemento del messaggio ricevuto
+	ADDA.L	D0,A3			;il valore del contatore generale dei caratteri (perchè l'ultimo byte del pacchetto è proprio l'ultimo byte ricevuto)
+	ADDA.L	#-1,A3			;correggo il valore sottraendo 1, perchè l'incremento del contatore è precedente al confronto
+
+	MOVE.L	A3,A4			;calcolo l'indirizzo del primo byte del pacchetto sottraendo all'indirizzo dell'ultimo byte
+	ADDA.L	#-9,A4			;la dimensione del pacchetto -1, per puntare proprio al primo elemento del pacchetto corrente
+	
+	MOVE.B	(A3),D5			;sposto i due byte da confrontare in due registri dati
+	MOVE.B	(A4),D6	
+	CMP		D5,D6
+	BNE		DISAB			;se i due caratteri non sono uguali salta a disabilita
+*						;se sono uguali
+	ADDQ		#1,D2			;aggiungi 1 al contatore dei pacchetti ricevuti
+	MOVE.B	D2,MC
+	CMP.B		MMC,D2		;verifica se quello ricevuto è l'ultimo pacchetto del messaggio
+	BEQ		DISAB			;se è l'ultimo pacchetto salta a disabilita 
+*						;se non è l'ultimo pacchetto del messaggio
+	MOVE.B	#0,D1			;resetta il contatore dei caratteri ricevuti per il pacchetto corrente
+	MOVE.B	D1,MP			
+	JMP		USCITA		;salta a uscita
+
+DISAB	MOVE.B	#$00,PIACA		;disabilito la periferica, ponendo a 0 i bit del registro di controllo
+*				;in questo modo dovrebbe lavorare in polling non ricevendo più caratteri e fermandosi sul ciclo loop jmp loop (che non può più essere stoppato da interruzioni)	
+
+
+USCITA	MOVE.L  	(A7)+,D2
+		MOVE.L  	(A7)+,D1
+		MOVE.L  	(A7)+,D0		;ripristino registri 
+		MOVE.L  	(A7)+,A0
+		MOVE.L	(A7)+,A1	
+		MOVE.L	(A7)+,A3
+		MOVE.L	(A7)+,A4
+		CLR		D5
+		CLR		D6
+
+	RTE
+
+	END	MAIN
+
+
+
+
+
+
+
+

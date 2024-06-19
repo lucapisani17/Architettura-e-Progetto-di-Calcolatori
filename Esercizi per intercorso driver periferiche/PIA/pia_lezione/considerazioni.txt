@@ -1,0 +1,45 @@
+Considerazioni:
+- le linee di interruzione IRQA e IRQB sono direttamente collegate ai flag CRA7 e CRB7, 
+che si alzano quando c'è una transizione attiva dei segnali CA1/CB1 rispettivamente.
+- i flag di interruzione CRA7/CRB7 vengono automaticamente abbassati dopo un'operazione di READ
+sul porto corrispondente
+- disabilitare l'interruzione IRQA/IRQB (ponendo a 0 il bit CRA0/CRA1) significa semplicemente 
+fare in modo che il settaggio dei flag non provochi l'alzamento della linea fisica corrispondente.
+- CA1/CB1 sono sempre degli input alla parallela, e vengono "pilotati" espressamente da noi, quando 
+colleghiamo CA2 in CB1 e CB2 in CA1 (quindi in effetti, per pilotare CA1/CB1, noi 
+agiamo su CB2/CA2 rispettivamente)
+- nella configurazione vista a lezione, 
+noi configuriamo CRA[5:3]=CRB[5:3]=100, ponendo in effetti CA2 e CB2 come segnali di uscita.
+In questo caso, i flag CRA6/CRB6, che normalmente vengono settati a seguito di una transizione attiva di 
+CA2/CB2, non ne verranno influenzati.
+- Quando programmati come segnali di uscita, CA2 e CB2 hanno un comportamento diverso:
+.CA2 si abbassa subito dopo una lettura dal registro A, e ritorna alto subito dopo la prossima transizione
+attiva di CA1
+.CB2 si abbassa subito dopo una scrittura sul registro B, e ritorna alto subito dopo la prossima transizione
+attiva di CB1. Nota che la transizione attiva di CB1 fa alzare automaticamente CRB7, che quindi va 
+appositamente abbassato con una READ (fittizia) prima di poter scrivere ancora.
+
+Le altre modalità, definite in base ai bit 5,4 e 3 dei registri di controllo,
+disciplinano più che altro il momento in cui CA2/CB2 deve essere rialzato, quindi non cambia nulla
+dal punto di vista delle funzionalità.
+
+INVIO DI MESSAGGI:
+-----------------------
+In POLLING: disabilitiamo l'interruzione su IRQB perchè non serve e nel programma MAIN trasferiamo l'intero 
+messaggio. Per fare questo, metteremo un ciclo di N passi (dove N è il numero di caratteri da trasferire) all'interno del quale:
+-facciamo la lettura fittizia
+-scriviamo un carattere sul porto di uscita
+-aspettiamo che CRB7 diventi alto
+
+
+
+Con ISR: abilitiamo l'interruzione su IRQB, associandole un autovettore o un vettore a seconda che usi gli
+autovettori o un PIC. Nel programma MAIN inviamo solo il primo carattere e poi ci mettiamo in ciclo caldo.
+Nel codice della ISR invece, dobbiamo capire cosa fare nel momento in cui arriva l'interruzione, che 
+corrisponde al momento in cui CB1 si abbassa. Quando il sistema è connesso con un'altra PIA gemella, 
+CB1 è connesso direttamente a CA2 dell'altro sistema, che si abbassa quando il ricevente ha
+letto il carattere.
+A questo punto quindi, nella ISR, dobbiamo:
+-effettuare la lettura fittizia per abbassare CRB7
+-fare i dovuti controlli sul numero di caratteri già trasmessi
+-inviare eventualemnte un altro carattere 

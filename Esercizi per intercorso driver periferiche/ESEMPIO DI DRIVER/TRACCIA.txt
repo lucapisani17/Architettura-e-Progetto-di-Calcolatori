@@ -1,0 +1,2 @@
+Un sistema S1 invia uno stream di caratteri al sistema S2, divisi in pacchetti di N byte.
+Il sistema S2, per ogni pacchetto ricevuto, verifica se il primo e l'ultimo byte del pacchetto coincidono: in caso affermativo, procede con l'acquisizione del prossimo pacchetto, altrimenti termina la ricezione e si ferma.

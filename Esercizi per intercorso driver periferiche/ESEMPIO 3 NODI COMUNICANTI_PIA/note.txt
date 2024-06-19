@@ -1,0 +1,4 @@
+I codici assembly in questa cartella sono relativi al driver di un sistema in cui
+A e B inviano, tramite parallela, dei messaggi a C.
+La stessa configurazione si può utilizzare anche per logiche diversem, in cui però la connessione sia
+sempre fra A e C e fra B e C tramite parallela.
